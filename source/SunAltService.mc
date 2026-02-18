@@ -4,7 +4,7 @@ import Toybox.System;
 import Toybox.Time;
 
 class SunAltService {
-    const DEBUG_LOG = false;
+    const DEBUG_LOG = true;
     const LOC_CHANGE_THRESHOLD_DEG = 0.01;
     const COARSE_STEP_SEC = 1800;
     const BISECT_TOLERANCE_SEC = 1;
@@ -75,11 +75,11 @@ class SunAltService {
 
         var eventData = _computeWindowEvents(windowStartTs, lat, lon);
         _cachedEvents = eventData[:events] as Array<Lang.Dictionary>;
-        _todayHasGoldenStart = _hasEventType(_cachedEvents, "GOLDEN_START");
-        _todayHasBlueStart = _hasEventType(_cachedEvents, "BLUE_START");
+        _todayHasGoldenStart = _hasGoldenOrBlue(_cachedEvents, "GOLDEN");
+        _todayHasBlueStart = _hasGoldenOrBlue(_cachedEvents, "BLUE");
 
-        var nextGoldenStart = _findNextEventTs(_cachedEvents, nowTs, "GOLDEN_START");
-        var nextBlueStart = _findNextEventTs(_cachedEvents, nowTs, "BLUE_START");
+        var nextGoldenStart = _findNextGoldenOrBlue(_cachedEvents, nowTs, "GOLDEN");
+        var nextBlueStart = _findNextGoldenOrBlue(_cachedEvents, nowTs, "BLUE");
         var dMinText = "--";
         if (nextGoldenStart != null && nextBlueStart != null) {
             dMinText = (((((nextGoldenStart as Number) - (nextBlueStart as Number)) / 60).toNumber())).toString();
@@ -127,8 +127,9 @@ class SunAltService {
         var alt = _solarAltitudeDeg(nowTs, lat, lon);
         var mode = _modeFromAltitude(alt);
 
-        var nextGolden = _findNextEventTs(_cachedEvents, nowTs, "GOLDEN_START");
-        var nextBlue = _findNextEventTs(_cachedEvents, nowTs, "BLUE_START");
+        // 查找下一次 Golden Hour 和 Blue Hour（不区分早晚）
+        var nextGolden = _findNextGoldenOrBlue(_cachedEvents, nowTs, "GOLDEN");
+        var nextBlue = _findNextGoldenOrBlue(_cachedEvents, nowTs, "BLUE");
 
         return {
             :hasFix => true,
@@ -136,58 +137,95 @@ class SunAltService {
             :altDeg => alt,
             :nextGoldenStartTs => nextGolden,
             :nextBlueStartTs => nextBlue,
-            :todayHasGoldenStart => _todayHasGoldenStart,
-            :todayHasBlueStart => _todayHasBlueStart,
+            :todayHasGoldenStart => _hasGoldenOrBlue(_cachedEvents, "GOLDEN"),
+            :todayHasBlueStart => _hasGoldenOrBlue(_cachedEvents, "BLUE"),
             :dbgDeltaMin => ((nextGolden != null && nextBlue != null) ? (((nextGolden as Number) - (nextBlue as Number)) / 60).toNumber() : null)
         };
+    }
+    
+    function _findNextGoldenOrBlue(events as Array<Lang.Dictionary>, nowTs as Number, kind as String) as Number or Null {
+        // 查找下一次 GOLDEN_START 或 BLUE_START（不管是 MORNING 还是 EVENING）
+        for (var i = 0; i < events.size(); i += 1) {
+            var e = events[i];
+            var typeStr = e[:type] as String;
+            if (typeStr.find(kind + "_START") != null && (e[:ts] as Number) > nowTs) {
+                return e[:ts] as Number;
+            }
+        }
+        return null;
+    }
+    
+    function _hasGoldenOrBlue(events as Array<Lang.Dictionary>, kind as String) as Boolean {
+        for (var i = 0; i < events.size(); i += 1) {
+            var typeStr = events[i][:type] as String;
+            if (typeStr.find(kind + "_START") != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _computeWindowEvents(startTs as Number, lat as Number, lon as Number) as Lang.Dictionary {
         var dayEndTs = startTs + 86400;
         var events = [] as Array<Lang.Dictionary>;
-        var morningBlueStart = null;
-        var morningGoldenStart = null;
-        var morningGoldenEnd = null;
-        var eveningGoldenStart = null;
-        var eveningGoldenEnd = null;
-        var eveningBlueEnd = null;
+        
+        // 优化：只扫描日出日落附近的时间窗口，而不是全天
+        // 粗略估计：太阳在地平线附近的时间大约在 4:00-10:00 和 16:00-22:00
+        var morningStart = startTs + (4 * 3600);
+        var morningEnd = startTs + (10 * 3600);
+        var eveningStart = startTs + (16 * 3600);
+        var eveningEnd = startTs + (22 * 3600);
+        
+        // 早晨扫描
+        var morningEvents = _scanPeriod(morningStart, morningEnd, lat, lon, true);
+        // 傍晚扫描
+        var eveningEvents = _scanPeriod(eveningStart, eveningEnd, lat, lon, false);
+        
+        // 合并事件
+        for (var i = 0; i < morningEvents.size(); i++) {
+            events.add(morningEvents[i]);
+        }
+        for (var i = 0; i < eveningEvents.size(); i++) {
+            events.add(eveningEvents[i]);
+        }
 
+        return {
+            :events => _sortEventsByTs(events)
+        };
+    }
+    
+    function _scanPeriod(startTs as Number, endTs as Number, lat as Number, lon as Number, isMorning as Boolean) as Array<Lang.Dictionary> {
+        var events = [] as Array<Lang.Dictionary>;
+        var blueStart = null;
+        var goldenStart = null;
+        var goldenEnd = null;
+        
         var t0 = startTs;
         var alt0 = _solarAltitudeDeg(t0, lat, lon);
-        while (t0 < dayEndTs) {
+        
+        while (t0 < endTs) {
             var t1 = t0 + COARSE_STEP_SEC;
-            if (t1 > dayEndTs) {
-                t1 = dayEndTs;
+            if (t1 > endTs) {
+                t1 = endTs;
             }
 
             var alt1 = _solarAltitudeDeg(t1, lat, lon);
             if (alt0 != null && alt1 != null && !_isNaN(alt0) && !_isNaN(alt1)) {
-                if (morningBlueStart == null && _isCrossing(alt0, alt1, -6.0, true)) {
-                    morningBlueStart = _bisectRoot(t0, t1, lat, lon, -6.0);
+                // Blue Hour: -6° 到 0°
+                if (blueStart == null && _isCrossing(alt0, alt1, -6.0, isMorning)) {
+                    blueStart = _bisectRoot(t0, t1, lat, lon, -6.0);
                 }
-                if (morningGoldenStart == null && _isCrossing(alt0, alt1, 0.0, true)) {
-                    morningGoldenStart = _bisectRoot(t0, t1, lat, lon, 0.0);
+                // Golden Hour: 0° 到 6°
+                if (goldenStart == null && _isCrossing(alt0, alt1, 0.0, isMorning)) {
+                    goldenStart = _bisectRoot(t0, t1, lat, lon, 0.0);
                 }
-                if (morningGoldenEnd == null && _isCrossing(alt0, alt1, 6.0, true)) {
-                    morningGoldenEnd = _bisectRoot(t0, t1, lat, lon, 6.0);
-                }
-                if (eveningGoldenStart == null && _isCrossing(alt0, alt1, 6.0, false)) {
-                    eveningGoldenStart = _bisectRoot(t0, t1, lat, lon, 6.0);
-                }
-                if (eveningGoldenEnd == null && _isCrossing(alt0, alt1, 0.0, false)) {
-                    eveningGoldenEnd = _bisectRoot(t0, t1, lat, lon, 0.0);
-                }
-                if (eveningBlueEnd == null && _isCrossing(alt0, alt1, -6.0, false)) {
-                    eveningBlueEnd = _bisectRoot(t0, t1, lat, lon, -6.0);
+                if (goldenEnd == null && _isCrossing(alt0, alt1, 6.0, isMorning)) {
+                    goldenEnd = _bisectRoot(t0, t1, lat, lon, 6.0);
                 }
             }
 
-            if (morningBlueStart != null
-                && morningGoldenStart != null
-                && morningGoldenEnd != null
-                && eveningGoldenStart != null
-                && eveningGoldenEnd != null
-                && eveningBlueEnd != null) {
+            // 早退优化：如果找到了所有事件就停止
+            if (blueStart != null && goldenStart != null && goldenEnd != null) {
                 break;
             }
 
@@ -195,28 +233,19 @@ class SunAltService {
             alt0 = alt1;
         }
 
-        if (morningBlueStart != null) {
-            events.add({ :ts => morningBlueStart, :type => "BLUE_START" });
+        // 添加事件，使用明确的类型标记
+        var prefix = isMorning ? "MORNING" : "EVENING";
+        if (blueStart != null) {
+            events.add({ :ts => blueStart, :type => prefix + "_BLUE_START" });
         }
-        if (morningGoldenStart != null) {
-            events.add({ :ts => morningGoldenStart, :type => "GOLDEN_START" });
+        if (goldenStart != null) {
+            events.add({ :ts => goldenStart, :type => prefix + "_GOLDEN_START" });
         }
-        if (morningGoldenEnd != null) {
-            events.add({ :ts => morningGoldenEnd, :type => "GOLDEN_END" });
+        if (goldenEnd != null) {
+            events.add({ :ts => goldenEnd, :type => prefix + "_GOLDEN_END" });
         }
-        if (eveningGoldenStart != null) {
-            events.add({ :ts => eveningGoldenStart, :type => "GOLDEN_START" });
-        }
-        if (eveningGoldenEnd != null) {
-            events.add({ :ts => eveningGoldenEnd, :type => "GOLDEN_END" });
-        }
-        if (eveningBlueEnd != null) {
-            events.add({ :ts => eveningBlueEnd, :type => "BLUE_END" });
-        }
-
-        return {
-            :events => _sortEventsByTs(events)
-        };
+        
+        return events;
     }
 
     function _findNextEventTs(events as Array<Lang.Dictionary>, nowTs as Number, typeName as String) as Number or Null {

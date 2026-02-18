@@ -6,7 +6,7 @@ import Toybox.Time;
 import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
-    const DEBUG_ENABLED = false;
+    const DEBUG_ENABLED = true;
 
     var _locationService as LocationService;
     var _sunAltService as SunAltService;

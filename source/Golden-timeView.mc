@@ -6,7 +6,7 @@ import Toybox.Time;
 import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
-    const DEBUG_ENABLED = false;
+    const DEBUG_ENABLED = true;
 
     var _locationService as LocationService;
     var _sunAltService as SunAltService;
@@ -132,6 +132,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
         dc.setColor(0x555555, Graphics.COLOR_TRANSPARENT);
         dc.fillRectangle((w / 2) - 1, yLabel - 2, 2, 26);
+        
+        // L2 验证：显示版本号
+        dc.setColor(0x888888, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w - 5, h - 15, Graphics.FONT_XTINY, "v1.1", Graphics.TEXT_JUSTIFY_RIGHT);
 
         if (DEBUG_ENABLED) {
             System.println(Lang.format(
@@ -192,6 +196,12 @@ class GoldenTimeView extends WatchUi.WatchFace {
         System.println(Lang.format(
             "[DebugSafe] safeL=$1$ safeR=$2$ safeB=$3$ goldW=$4$ goldX=$5$",
             [safeLeft, safeRight, safeBottom, goldLabelW, goldX]
+        ));
+        
+        // 🔍 状态快照（用于自动验证）
+        System.println(Lang.format(
+            "[SNAPSHOT] buildId=v1.1 blueCountdown=$1$ goldenCountdown=$2$ blueTs=$3$ goldenTs=$4$",
+            [bText, gText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
         ));
     }
 

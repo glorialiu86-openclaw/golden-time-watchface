@@ -4,9 +4,9 @@ import Toybox.System;
 import Toybox.Time;
 
 class SunAltService {
-    const DEBUG_LOG = false;
+    const DEBUG_LOG = true;
     const LOC_CHANGE_THRESHOLD_DEG = 0.01;
-    const COARSE_STEP_SEC = 1800;
+    const COARSE_STEP_SEC = 900;  // 15 分钟步长，更精确
     const BISECT_TOLERANCE_SEC = 1;
     const ALT_ZERO_EPS_DEG = 0.01;
 
@@ -141,6 +141,10 @@ class SunAltService {
         // 查找下一次 Golden Hour 和 Blue Hour（不区分早晚）
         var nextGolden = _findNextGoldenOrBlue(_cachedEvents, nowTs, "GOLDEN");
         var nextBlue = _findNextGoldenOrBlue(_cachedEvents, nowTs, "BLUE");
+        
+        if (DEBUG_LOG) {
+            System.println(Lang.format("[getSnapshot] nowTs=$1$ nextGolden=$2$ nextBlue=$3$", [nowTs, nextGolden, nextBlue]));
+        }
 
         return {
             :hasFix => true,
@@ -160,8 +164,14 @@ class SunAltService {
             var e = events[i];
             var typeStr = e[:type] as String;
             if (typeStr.find(kind + "_START") != null && (e[:ts] as Number) > nowTs) {
+                if (DEBUG_LOG) {
+                    System.println(Lang.format("[_findNext] Found $1$: ts=$2$ type=$3$", [kind, e[:ts], typeStr]));
+                }
                 return e[:ts] as Number;
             }
+        }
+        if (DEBUG_LOG) {
+            System.println(Lang.format("[_findNext] NOT FOUND: $1$ (nowTs=$2$)", [kind, nowTs]));
         }
         return null;
     }
@@ -221,69 +231,176 @@ class SunAltService {
     
     function _scanPeriod(startTs as Number, endTs as Number, lat as Number, lon as Number, isMorning as Boolean) as Array<Lang.Dictionary> {
         var events = [] as Array<Lang.Dictionary>;
-        var blueStart = null;
-        var goldenStart = null;
-        var goldenEnd = null;
         
         if (DEBUG_LOG) {
             System.println(Lang.format("[_scanPeriod] start=$1$ end=$2$ isMorning=$3$", [startTs, endTs, isMorning ? "1" : "0"]));
         }
         
-        var t0 = startTs;
-        var alt0 = _solarAltitudeDeg(t0, lat, lon);
+        // 六个关键时间点：
+        // 1. 晨蓝调起点（-10°，上升）
+        // 2. 晨蓝调结束 = 晨金调起点（-4°，上升）
+        // 3. 晨金调结束（+6°，上升）
+        // 4. 夜金调起点（+6°，下降）
+        // 5. 夜金调结束 = 夜蓝调起点（-4°，下降）
+        // 6. 夜蓝调结束（-10°，下降）
         
-        while (t0 < endTs) {
-            var t1 = t0 + COARSE_STEP_SEC;
-            if (t1 > endTs) {
-                t1 = endTs;
+        var morningBlueStart = null;      // 时间点 1
+        var morningBlueGoldenBoundary = null;  // 时间点 2（共享）
+        var morningGoldenEnd = null;      // 时间点 3
+        
+        var eveningGoldenStart = null;    // 时间点 4
+        var eveningGoldenBlueBoundary = null;  // 时间点 5（共享）
+        var eveningBlueEnd = null;        // 时间点 6
+        
+        if (isMorning) {
+            // 早晨：太阳上升
+            morningBlueStart = _scanForThreshold(startTs, endTs, lat, lon, -10.0, true);
+            morningBlueGoldenBoundary = _scanForThreshold(startTs, endTs, lat, lon, -4.0, true);
+            morningGoldenEnd = _scanForThreshold(startTs, endTs, lat, lon, 6.0, true);
+        } else {
+            // 傍晚：太阳下降
+            eveningGoldenStart = _scanForThreshold(startTs, endTs, lat, lon, 6.0, false);
+            eveningGoldenBlueBoundary = _scanForThreshold(startTs, endTs, lat, lon, -4.0, false);
+            eveningBlueEnd = _scanForThreshold(startTs, endTs, lat, lon, -10.0, false);
+        }
+        
+        if (DEBUG_LOG) {
+            if (isMorning) {
+                System.println(Lang.format("[_scanPeriod] MORNING: blueStart=$1$ boundary=$2$ goldenEnd=$3$", 
+                    [morningBlueStart, morningBlueGoldenBoundary, morningGoldenEnd]));
+            } else {
+                System.println(Lang.format("[_scanPeriod] EVENING: goldenStart=$1$ boundary=$2$ blueEnd=$3$", 
+                    [eveningGoldenStart, eveningGoldenBlueBoundary, eveningBlueEnd]));
             }
-
-            var alt1 = _solarAltitudeDeg(t1, lat, lon);
-            if (alt0 != null && alt1 != null && !_isNaN(alt0) && !_isNaN(alt1)) {
-                // Blue Hour: -6° 到 0°
-                if (blueStart == null && _isCrossing(alt0, alt1, -6.0, isMorning)) {
-                    blueStart = _bisectRoot(t0, t1, lat, lon, -6.0);
-                }
-                // Golden Hour: 0° 到 6°
-                if (goldenStart == null && _isCrossing(alt0, alt1, 0.0, isMorning)) {
-                    goldenStart = _bisectRoot(t0, t1, lat, lon, 0.0);
-                }
-                if (goldenEnd == null && _isCrossing(alt0, alt1, 6.0, isMorning)) {
-                    goldenEnd = _bisectRoot(t0, t1, lat, lon, 6.0);
-                }
-            }
-
-            // 早退优化：如果找到了所有事件就停止
-            if (blueStart != null && goldenStart != null && goldenEnd != null) {
-                break;
-            }
-
-            t0 = t1;
-            alt0 = alt1;
         }
 
-        // 添加事件，使用明确的类型标记
+        // 添加事件
         var prefix = isMorning ? "MORNING" : "EVENING";
-        if (blueStart != null) {
-            if (DEBUG_LOG) {
-                System.println(Lang.format("[_scanPeriod] Adding BLUE_START: $1$", [blueStart]));
+        
+        if (isMorning) {
+            if (morningBlueStart != null) {
+                events.add({ :ts => morningBlueStart, :type => prefix + "_BLUE_START" });
             }
-            events.add({ :ts => blueStart, :type => prefix + "_BLUE_START" });
-        }
-        if (goldenStart != null) {
-            if (DEBUG_LOG) {
-                System.println(Lang.format("[_scanPeriod] Adding GOLDEN_START: $1$", [goldenStart]));
+            if (morningBlueGoldenBoundary != null) {
+                events.add({ :ts => morningBlueGoldenBoundary, :type => prefix + "_BLUE_END" });
+                events.add({ :ts => morningBlueGoldenBoundary, :type => prefix + "_GOLDEN_START" });
             }
-            events.add({ :ts => goldenStart, :type => prefix + "_GOLDEN_START" });
-        }
-        if (goldenEnd != null) {
-            if (DEBUG_LOG) {
-                System.println(Lang.format("[_scanPeriod] Adding GOLDEN_END: $1$", [goldenEnd]));
+            if (morningGoldenEnd != null) {
+                events.add({ :ts => morningGoldenEnd, :type => prefix + "_GOLDEN_END" });
             }
-            events.add({ :ts => goldenEnd, :type => prefix + "_GOLDEN_END" });
+        } else {
+            if (eveningGoldenStart != null) {
+                events.add({ :ts => eveningGoldenStart, :type => prefix + "_GOLDEN_START" });
+            }
+            if (eveningGoldenBlueBoundary != null) {
+                events.add({ :ts => eveningGoldenBlueBoundary, :type => prefix + "_GOLDEN_END" });
+                events.add({ :ts => eveningGoldenBlueBoundary, :type => prefix + "_BLUE_START" });
+            }
+            if (eveningBlueEnd != null) {
+                events.add({ :ts => eveningBlueEnd, :type => prefix + "_BLUE_END" });
+            }
         }
         
         return events;
+    }
+    
+    // 使用解析解计算太阳穿越指定高度角的时间
+    function _scanForThreshold(startTs as Number, endTs as Number, lat as Number, lon as Number, targetAlt as Float, rising as Boolean) as Number or Null {
+        // 在时间范围内搜索，每天检查一次
+        var dayStart = startTs;
+        
+        while (dayStart < endTs) {
+            var result = _solveAltitudeCrossing(dayStart, lat, lon, targetAlt, rising);
+            if (result != null && result >= startTs && result <= endTs) {
+                if (DEBUG_LOG) {
+                    System.println(Lang.format("[_scanForThreshold] Solved crossing at $1$ for alt=$2$", [result, targetAlt]));
+                }
+                return result;
+            }
+            dayStart += 86400;  // 下一天
+        }
+        
+        return null;
+    }
+    
+    // 解析解：计算太阳穿越指定高度角的时间（NOAA 标准公式）
+    function _solveAltitudeCrossing(dayStartTs as Number, latDeg as Number, lonDeg as Number, altDeg as Float, rising as Boolean) as Number or Null {
+        // 1. 计算儒略日和太阳赤纬
+        var jd = (dayStartTs / 86400.0) + 2440587.5;
+        var jc = (jd - 2451545.0) / 36525.0;
+        
+        var meanLong = _normalizeDeg(280.46646 + jc * (36000.76983 + jc * 0.0003032));
+        var meanAnom = _normalizeDeg(357.52911 + jc * (35999.05029 - 0.0001537 * jc));
+        var omega = 125.04 - 1934.136 * jc;
+        var m_rad = _toRadians(meanAnom);
+        var center = (_sin(m_rad) * (1.914602 - jc * (0.004817 + 0.000014 * jc))
+                      + _sin(2.0 * m_rad) * (0.019993 - 0.000101 * jc)
+                      + _sin(3.0 * m_rad) * 0.000289);
+        var trueLong = meanLong + center;
+        var eclipLong = trueLong - 0.00569 - 0.00478 * _sin(_toRadians(omega));
+        var obliqMean = 23.0 + (26.0 + ((21.448 - jc * (46.815 + jc * (0.00059 - jc * 0.001813))) / 60.0)) / 60.0;
+        var obliqCorr = obliqMean + 0.00256 * _cos(_toRadians(omega));
+        var eclipRad = _toRadians(eclipLong);
+        var obliqRad = _toRadians(obliqCorr);
+        var declRad = _asin(_sin(obliqRad) * _sin(eclipRad));
+        
+        // 2. 计算时间方程
+        var varY = _tan(obliqRad / 2.0) * _tan(obliqRad / 2.0);
+        var eqOfTime = 4.0 * _toDegrees(
+            varY * _sin(2.0 * _toRadians(meanLong))
+            - 2.0 * (_toRadians(meanAnom) / 57.29578)
+            + 4.0 * (_toRadians(meanAnom) / 57.29578) * varY * _sin(2.0 * _toRadians(meanLong))
+            - 0.5 * varY * varY * _sin(4.0 * _toRadians(meanLong))
+            - 1.25 * (_toRadians(meanAnom) / 57.29578) * (_toRadians(meanAnom) / 57.29578) * _sin(2.0 * _toRadians(meanAnom))
+        );
+        
+        // 3. 解时角方程
+        var latRad = _toRadians(latDeg);
+        var altRad = _toRadians(altDeg);
+        
+        var sinAlt = _sin(altRad);
+        var sinLat = _sin(latRad);
+        var cosLat = _cos(latRad);
+        var sinDecl = _sin(declRad);
+        var cosDecl = _cos(declRad);
+        
+        var numerator = sinAlt - sinLat * sinDecl;
+        var denominator = cosLat * cosDecl;
+        
+        if (_abs(denominator) < 0.0001) {
+            return null;
+        }
+        
+        var cosH = numerator / denominator;
+        
+        if (cosH < -1.0 || cosH > 1.0) {
+            return null;
+        }
+        
+        var hourAngleDeg = _toDegrees(_acos(cosH));
+        
+        // 4. 计算太阳正午（NOAA 标准公式）
+        var timezoneOffset = _round(lonDeg / 15.0);
+        var solarNoonMinutes = 720.0 - 4.0 * lonDeg - eqOfTime + timezoneOffset * 60.0;
+        var solarNoonHourLocal = solarNoonMinutes / 60.0;
+        
+        // 5. 计算事件时间（本地时间）
+        var timeOffsetHours = hourAngleDeg / 15.0;
+        var eventHourLocal = solarNoonHourLocal + (rising ? -timeOffsetHours : timeOffsetHours);
+        
+        // 归一化到 [0, 24)
+        while (eventHourLocal < 0) {
+            eventHourLocal += 24.0;
+        }
+        while (eventHourLocal >= 24.0) {
+            eventHourLocal -= 24.0;
+        }
+        
+        // 转换为 UTC 时间戳
+        var eventHourUtc = eventHourLocal - timezoneOffset;
+        var eventTs = dayStartTs + (eventHourUtc * 3600.0).toNumber();
+        
+        return eventTs;
     }
 
     function _findNextEventTs(events as Array<Lang.Dictionary>, nowTs as Number, typeName as String) as Number or Null {
@@ -335,65 +452,57 @@ class SunAltService {
     }
 
     function _bisectRoot(loTs, hiTs, lat, lon, threshold) {
-        if (DEBUG_LOG) {
-            System.println(Lang.format("[_bisectRoot] START: lo=$1$ hi=$2$ threshold=$3$", [loTs, hiTs, threshold]));
-        }
-        
         var lo = loTs;
         var hi = hiTs;
         var altLo = _solarAltitudeDeg(lo, lat, lon);
         var altHi = _solarAltitudeDeg(hi, lat, lon);
+        
         if (altLo == null || altHi == null || _isNaN(altLo) || _isNaN(altHi)) {
-            if (DEBUG_LOG) {
-                System.println("[_bisectRoot] NULL altitude");
-            }
             return null;
         }
+        
         var fLo = (altLo as Number) - threshold;
         var fHi = (altHi as Number) - threshold;
+        
         if (fLo == null || fHi == null || _isNaN(fLo) || _isNaN(fHi)) {
-            if (DEBUG_LOG) {
-                System.println("[_bisectRoot] NULL f value");
-            }
             return null;
         }
 
         // 检查是否跨越阈值
         if ((fLo > 0 && fHi > 0) || (fLo < 0 && fHi < 0)) {
-            if (DEBUG_LOG) {
-                System.println(Lang.format("[_bisectRoot] No crossing: fLo=$1$ fHi=$2$", [fLo, fHi]));
-            }
-            return null;  // 没有跨越，无法二分
+            return null;
         }
 
-        // 二分查找精确时间
+        // 二分查找：使用浮点数计算，最后转整数
         var iterations = 0;
         while ((hi - lo) > BISECT_TOLERANCE_SEC && iterations < 20) {
-            var mid = ((lo + hi) / 2).toNumber();  // 确保是整数
+            // 关键修复：使用浮点数除法，避免整数截断
+            var diff = hi - lo;
+            var mid = lo + (diff / 2.0).toNumber();
+            
+            if (DEBUG_LOG && iterations == 0) {
+                System.println(Lang.format("[_bisect] threshold=$1$ lo=$2$ hi=$3$ diff=$4$ mid=$5$", [threshold, lo, hi, diff, mid]));
+            }
+            
             var altMid = _solarAltitudeDeg(mid, lat, lon);
             if (altMid == null || _isNaN(altMid)) {
-                if (DEBUG_LOG) {
-                    System.println("[_bisectRoot] NULL altMid");
-                }
-                return null;
-            }
-            var fMid = (altMid as Number) - threshold;
-            if (_isNaN(fMid)) {
-                if (DEBUG_LOG) {
-                    System.println("[_bisectRoot] NaN fMid");
-                }
                 return null;
             }
             
-            // 检查 fMid 是否足够接近 0
+            var fMid = (altMid as Number) - threshold;
+            if (_isNaN(fMid)) {
+                return null;
+            }
+            
+            // 检查是否足够接近
             if (_abs(fMid) < 0.01) {
                 if (DEBUG_LOG) {
-                    System.println(Lang.format("[_bisectRoot] FOUND: mid=$1$ altMid=$2$", [mid, altMid]));
+                    System.println(Lang.format("[_bisect] CONVERGED: mid=$1$ altMid=$2$ iter=$3$", [mid, altMid, iterations]));
                 }
                 return mid;
             }
 
-            // 选择包含根的区间继续二分
+            // 选择包含根的区间
             if ((fLo < 0 && fMid > 0) || (fLo > 0 && fMid < 0)) {
                 hi = mid;
                 fHi = fMid;
@@ -404,11 +513,11 @@ class SunAltService {
             iterations += 1;
         }
 
-        var result = ((lo + hi) / 2).toNumber();
+        var result = lo + ((hi - lo) / 2.0).toNumber();
         if (DEBUG_LOG) {
-            System.println(Lang.format("[_bisectRoot] DONE: result=$1$ iterations=$2$", [result, iterations]));
+            System.println(Lang.format("[_bisect] DONE: result=$1$ iter=$2$ finalDiff=$3$", [result, iterations, hi - lo]));
         }
-        return result;  // 返回中点作为最佳估计，确保是整数
+        return result;
     }
 
     function _solarAltitudeDeg(ts, latDeg, lonDeg) {
@@ -522,6 +631,38 @@ class SunAltService {
         return startTs;
     }
 
+    function _tan(rad) {
+        return Math.tan(rad);
+    }
+
+    function _toRadians(deg) {
+        return deg * Math.PI / 180.0;
+    }
+
+    function _toDegrees(rad) {
+        return rad * 180.0 / Math.PI;
+    }
+
+    function _sin(rad) {
+        return Math.sin(rad);
+    }
+
+    function _cos(rad) {
+        return Math.cos(rad);
+    }
+
+    function _asin(val) {
+        return Math.asin(val);
+    }
+
+    function _acos(val) {
+        return Math.acos(val);
+    }
+
+    function _atan2(y, x) {
+        return Math.atan2(y, x);
+    }
+
     function _degToRad(v) {
         return v * Math.PI / 180.0;
     }
@@ -554,6 +695,14 @@ class SunAltService {
 
     function _abs(v) {
         return (v < 0) ? -v : v;
+    }
+
+    function _round(v) {
+        if (v >= 0) {
+            return (v + 0.5).toNumber();
+        } else {
+            return (v - 0.5).toNumber();
+        }
     }
 
     function _fmt1(v) as String {

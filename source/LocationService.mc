@@ -15,7 +15,7 @@ class LocationService {
     }
 
     function requestFixIfNeeded(nowTs as Number) as Void {
-        // 生产模式：使用真实 GPS
+        // 测试模式：跳过真实 GPS 请求
         if (TEST_MODE) {
             return;
         }

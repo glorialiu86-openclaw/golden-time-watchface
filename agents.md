@@ -99,8 +99,6 @@
 3) **倒计时语义（核心功能）**
 - GOLDEN 与 BLUE 倒计时要**同时展示**（左 BLUE / 右 GOLDEN）
 - 倒计时为“到下一次开始区间”的剩余时间
-- golden：+6° → 0°（0° 属于 GOLDEN）
-- blue：0° → -6°（与 golden 不互相包含）
 - 高纬度不穿越阈值：当日对应区间不显示（用 `--:--`）
 
 4) **时区/DST**
@@ -133,3 +131,23 @@
 - 只有在现有已批准前缀无法完成任务时，才申请新权限。
 - 新权限申请要尽量小范围、可复用（避免过宽前缀）。
 - 若同类任务会反复出现，优先申请“可复用且边界清晰”的前缀，减少后续反复点 `yes`。
+
+---
+
+## 7. 模拟器启动与部署（固定流程，禁止反复试错）
+
+1) **唯一推荐启动方式（先 GUI）**
+- 必须先用 `open "$SDK/bin/ConnectIQ.app"` 启动模拟器，再执行部署。
+- 启动后必须等待 `5-8` 秒让 simulator 后台进程就绪，再跑 `monkeydo`。
+
+2) **禁止方式（不要再尝试）**
+- 禁止把 `"$SDK/bin/ConnectIQ.app/Contents/MacOS/simulator" fenix7s` 当作默认启动方式反复尝试。
+- 出现 `Unable to connect to simulator.` 时，不要连续盲重试同一错误命令；应回到“先 open GUI -> 等待 -> monkeydo”流程。
+
+3) **标准命令模板（按此执行）**
+- build：
+  - `/bin/zsh -lc 'SDK_ROOT="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks"; SDK_DIR="$(find "$SDK_ROOT" -maxdepth 1 -type d -name "connectiq-sdk-*" | sort | tail -n 1)"; "$SDK_DIR/bin/monkeyc" -f monkey.jungle -o bin/test_fenix7s_Goldentime.prg -y developer_key -d fenix7s'`
+- 启动模拟器：
+  - `/bin/zsh -lc 'SDK="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa"; open "$SDK/bin/ConnectIQ.app"; sleep 8'`
+- deploy/run：
+  - `/bin/zsh -lc 'SDK="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa"; "$SDK/bin/monkeydo" bin/test_fenix7s_Goldentime.prg fenix7s'`

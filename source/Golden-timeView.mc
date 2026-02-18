@@ -6,7 +6,7 @@ import Toybox.Time;
 import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
-    const DEBUG_ENABLED = true;
+    const DEBUG_ENABLED = false;
 
     var _locationService as LocationService;
     var _sunAltService as SunAltService;
@@ -37,9 +37,22 @@ class GoldenTimeView extends WatchUi.WatchFace {
         _drawDate(dc, nowMoment, w, h);
         _drawDualCountdown(dc, snap, nowTs, w, h);
 
-        if (DEBUG_ENABLED) {
-            _drawDebug(dc, snap, fix);
+        var hasFix = snap[:hasFix] as Boolean;
+        var blueTs = hasFix ? (snap[:nextBlueStartTs] as Number or Null) : null;
+        var goldenTs = hasFix ? (snap[:nextGoldenStartTs] as Number or Null) : null;
+        if (!((snap[:todayHasBlueStart] as Boolean) || false)) {
+            blueTs = null;
         }
+        if (!((snap[:todayHasGoldenStart] as Boolean) || false)) {
+            goldenTs = null;
+        }
+        var blueText = Lang.format("b=$1$", [_formatRemaining(nowTs, blueTs)]);
+        var goldenText = Lang.format("g=$1$", [_formatRemaining(nowTs, goldenTs)]);
+        System.println(Lang.format(
+            "[SNAPSHOT] buildId=v1.1 dayStartUtc=$1$ windowStartTs=$2$ windowEndTs=$3$ blueCountdown=$4$ goldenCountdown=$5$ blueTs=$6$ goldenTs=$7$",
+            [snap[:dayStartUtc], snap[:windowStartTs], snap[:windowEndTs], blueText, goldenText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
+        ));
+
     }
 
     function _drawBackground(dc as Dc) as Void {
@@ -161,64 +174,6 @@ class GoldenTimeView extends WatchUi.WatchFace {
         return Lang.format("$1$:$2$", [(hh.toNumber()).format("%02d"), (mm.toNumber()).format("%02d")]);
     }
 
-    function _drawDebug(dc as Dc, snap as Lang.Dictionary, fix as Lang.Dictionary or Null) as Void {
-        var mode = snap[:mode] as String;
-        var altText = "alt=--";
-        if (snap[:altDeg] != null) {
-            altText = Lang.format("alt=$1$", [_round1(snap[:altDeg] as Number)]);
-        }
-
-        var gText = Lang.format("g=$1$", [_fmtDbgTs(snap[:nextGoldenStartTs] as Number or Null)]);
-        var bText = Lang.format("b=$1$", [_fmtDbgTs(snap[:nextBlueStartTs] as Number or Null)]);
-        var dText = (snap[:dbgDeltaMin] == null)
-            ? "d=--m"
-            : Lang.format("d=$1$m", [snap[:dbgDeltaMin]]);
-        var locText = (fix == null) ? "loc=0" : "loc=1";
-        var pad = 6;
-        var w = dc.getWidth();
-        var h = dc.getHeight();
-        var insets = _getSafeInsets(dc);
-        var safeLeft = (insets[:left] as Number) + pad;
-        var safeRight = w - (insets[:right] as Number) - pad;
-        var safeBottom = h - (insets[:bottom] as Number) - pad;
-        var safeW = safeRight - safeLeft;
-        var rightCenterX = safeLeft + (safeW * 0.70);
-        var goldLabelW = dc.getTextWidthInPixels("GOLDEN", Graphics.FONT_TINY);
-        var goldX = _clamp(rightCenterX, safeLeft + (goldLabelW / 2), safeRight - (goldLabelW / 2));
-
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(4, 4, Graphics.FONT_XTINY, mode, Graphics.TEXT_JUSTIFY_LEFT);
-        dc.drawText(4, 18, Graphics.FONT_XTINY, altText, Graphics.TEXT_JUSTIFY_LEFT);
-        dc.drawText(4, 32, Graphics.FONT_XTINY, gText, Graphics.TEXT_JUSTIFY_LEFT);
-        dc.drawText(4, 46, Graphics.FONT_XTINY, bText, Graphics.TEXT_JUSTIFY_LEFT);
-        dc.drawText(4, 60, Graphics.FONT_XTINY, dText, Graphics.TEXT_JUSTIFY_LEFT);
-        dc.drawText(4, 74, Graphics.FONT_XTINY, locText, Graphics.TEXT_JUSTIFY_LEFT);
-        System.println(Lang.format(
-            "[DebugSafe] safeL=$1$ safeR=$2$ safeB=$3$ goldW=$4$ goldX=$5$",
-            [safeLeft, safeRight, safeBottom, goldLabelW, goldX]
-        ));
-        
-        // 🔍 状态快照（用于自动验证）
-        System.println(Lang.format(
-            "[SNAPSHOT] buildId=v1.1 blueCountdown=$1$ goldenCountdown=$2$ blueTs=$3$ goldenTs=$4$",
-            [bText, gText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
-        ));
-    }
-
-    function _fmtDbgTs(ts as Number or Null) as String {
-        if (ts == null) {
-            return "--:--";
-        }
-        var info = Time.Gregorian.info(new Time.Moment(ts as Number), Time.FORMAT_SHORT);
-        return Lang.format(
-            "$1$:$2$",
-            [
-                (info[:hour] as Number).format("%02d"),
-                (info[:min] as Number).format("%02d")
-            ]
-        );
-    }
-
     function _getSafeInsets(dc as Dc) as Lang.Dictionary {
         var w = dc.getWidth();
         var h = dc.getHeight();
@@ -250,7 +205,4 @@ class GoldenTimeView extends WatchUi.WatchFace {
         return x;
     }
 
-    function _round1(v as Number) as String {
-        return v.format("%.1f");
-    }
 }

@@ -121,6 +121,11 @@ class SunAltService {
     }
 
     function getSnapshot(nowTs as Number) as Lang.Dictionary {
+        var dayWindow = _getTodayWindow(nowTs);
+        var windowStartTs = dayWindow[:startTs] as Number;
+        var windowEndTs = windowStartTs + (86400 * 2);
+        var dayStartUtc = _getUtcDayStart(nowTs);
+
         if (!_hasFix || _lastFix == null) {
             return {
                 :hasFix => false,
@@ -129,7 +134,10 @@ class SunAltService {
                 :nextGoldenStartTs => null,
                 :nextBlueStartTs => null,
                 :todayHasGoldenStart => false,
-                :todayHasBlueStart => false
+                :todayHasBlueStart => false,
+                :dayStartUtc => dayStartUtc,
+                :windowStartTs => windowStartTs,
+                :windowEndTs => windowEndTs
             };
         }
 
@@ -154,7 +162,10 @@ class SunAltService {
             :nextBlueStartTs => nextBlue,
             :todayHasGoldenStart => _hasGoldenOrBlue(_cachedEvents, "GOLDEN"),
             :todayHasBlueStart => _hasGoldenOrBlue(_cachedEvents, "BLUE"),
-            :dbgDeltaMin => ((nextGolden != null && nextBlue != null) ? (((nextGolden as Number) - (nextBlue as Number)) / 60).toNumber() : null)
+            :dbgDeltaMin => ((nextGolden != null && nextBlue != null) ? (((nextGolden as Number) - (nextBlue as Number)) / 60).toNumber() : null),
+            :dayStartUtc => dayStartUtc,
+            :windowStartTs => windowStartTs,
+            :windowEndTs => windowEndTs
         };
     }
     
@@ -307,7 +318,7 @@ class SunAltService {
     // 使用解析解计算太阳穿越指定高度角的时间
     function _scanForThreshold(startTs as Number, endTs as Number, lat as Number, lon as Number, targetAlt as Float, rising as Boolean) as Number or Null {
         // 在时间范围内搜索，每天检查一次
-        var dayStart = startTs;
+        var dayStart = _getUtcDayStart(startTs);
         
         while (dayStart < endTs) {
             var result = _solveAltitudeCrossing(dayStart, lat, lon, targetAlt, rising);
@@ -629,6 +640,10 @@ class SunAltService {
             return startTs + 43200;
         }
         return startTs;
+    }
+
+    function _getUtcDayStart(ts as Number) as Number {
+        return (Math.floor(ts / 86400.0) * 86400.0).toNumber();
     }
 
     function _tan(rad) {

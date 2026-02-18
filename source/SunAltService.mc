@@ -71,7 +71,10 @@ class SunAltService {
         var lat = fix[:lat] as Number;
         var lon = fix[:lon] as Number;
         _warnedInRecompute = false;
-        var windowStartTs = _getSlotStartTs(nowTs);
+        
+        // 修复：从当天 00:00 开始扫描，而不是从 slot 开始
+        var dayWindow = _getTodayWindow(nowTs);
+        var windowStartTs = dayWindow[:startTs] as Number;
 
         var eventData = _computeWindowEvents(windowStartTs, lat, lon);
         _cachedEvents = eventData[:events] as Array<Lang.Dictionary>;
@@ -106,6 +109,13 @@ class SunAltService {
                 "[AltDelta] altNow=$1$ alt+5m=$2$ dAlt=$3$deg",
                 [_fmtAlt(altNow), _fmtAlt(altPlus5), _fmtAlt(dAlt)]
             ));
+            
+            // 输出所有找到的事件
+            System.println(Lang.format("[Events] Found $1$ events:", [_cachedEvents.size()]));
+            for (var i = 0; i < _cachedEvents.size(); i++) {
+                var e = _cachedEvents[i];
+                System.println(Lang.format("  [$1$] $2$ at $3$", [i, e[:type], _fmtTs(e[:ts])]));
+            }
         }
     }
 
@@ -166,27 +176,41 @@ class SunAltService {
     }
 
     function _computeWindowEvents(startTs as Number, lat as Number, lon as Number) as Lang.Dictionary {
-        var dayEndTs = startTs + 86400;
+        // 扫描 48 小时窗口（今天 + 明天），确保总能找到下一次事件
+        var windowEndTs = startTs + (86400 * 2);
         var events = [] as Array<Lang.Dictionary>;
         
-        // 优化：只扫描日出日落附近的时间窗口，而不是全天
-        // 粗略估计：太阳在地平线附近的时间大约在 4:00-10:00 和 16:00-22:00
-        var morningStart = startTs + (4 * 3600);
-        var morningEnd = startTs + (10 * 3600);
-        var eveningStart = startTs + (16 * 3600);
-        var eveningEnd = startTs + (22 * 3600);
+        // 扫描今天
+        var todayMorningStart = startTs + (4 * 3600);
+        var todayMorningEnd = startTs + (10 * 3600);
+        var todayEveningStart = startTs + (16 * 3600);
+        var todayEveningEnd = startTs + (22 * 3600);
         
-        // 早晨扫描
-        var morningEvents = _scanPeriod(morningStart, morningEnd, lat, lon, true);
-        // 傍晚扫描
-        var eveningEvents = _scanPeriod(eveningStart, eveningEnd, lat, lon, false);
+        var todayMorning = _scanPeriod(todayMorningStart, todayMorningEnd, lat, lon, true);
+        var todayEvening = _scanPeriod(todayEveningStart, todayEveningEnd, lat, lon, false);
         
-        // 合并事件
-        for (var i = 0; i < morningEvents.size(); i++) {
-            events.add(morningEvents[i]);
+        // 扫描明天
+        var tomorrowStart = startTs + 86400;
+        var tomorrowMorningStart = tomorrowStart + (4 * 3600);
+        var tomorrowMorningEnd = tomorrowStart + (10 * 3600);
+        var tomorrowEveningStart = tomorrowStart + (16 * 3600);
+        var tomorrowEveningEnd = tomorrowStart + (22 * 3600);
+        
+        var tomorrowMorning = _scanPeriod(tomorrowMorningStart, tomorrowMorningEnd, lat, lon, true);
+        var tomorrowEvening = _scanPeriod(tomorrowEveningStart, tomorrowEveningEnd, lat, lon, false);
+        
+        // 合并所有事件
+        for (var i = 0; i < todayMorning.size(); i++) {
+            events.add(todayMorning[i]);
         }
-        for (var i = 0; i < eveningEvents.size(); i++) {
-            events.add(eveningEvents[i]);
+        for (var i = 0; i < todayEvening.size(); i++) {
+            events.add(todayEvening[i]);
+        }
+        for (var i = 0; i < tomorrowMorning.size(); i++) {
+            events.add(tomorrowMorning[i]);
+        }
+        for (var i = 0; i < tomorrowEvening.size(); i++) {
+            events.add(tomorrowEvening[i]);
         }
 
         return {
@@ -310,16 +334,12 @@ class SunAltService {
             return null;
         }
 
-        if (fLo == 0) {
-            return lo;
-        }
-        if (fHi == 0) {
-            return hi;
-        }
+        // 检查是否跨越阈值
         if ((fLo > 0 && fHi > 0) || (fLo < 0 && fHi < 0)) {
-            return null;
+            return null;  // 没有跨越，无法二分
         }
 
+        // 二分查找精确时间
         while ((hi - lo) > BISECT_TOLERANCE_SEC) {
             var mid = (lo + hi) / 2;
             var altMid = _solarAltitudeDeg(mid, lat, lon);
@@ -330,10 +350,13 @@ class SunAltService {
             if (_isNaN(fMid)) {
                 return null;
             }
-            if (fMid == 0) {
+            
+            // 检查 fMid 是否足够接近 0
+            if (_abs(fMid) < 0.01) {
                 return mid;
             }
 
+            // 选择包含根的区间继续二分
             if ((fLo < 0 && fMid > 0) || (fLo > 0 && fMid < 0)) {
                 hi = mid;
                 fHi = fMid;
@@ -343,7 +366,7 @@ class SunAltService {
             }
         }
 
-        return hi;
+        return (lo + hi) / 2;  // 返回中点作为最佳估计
     }
 
     function _solarAltitudeDeg(ts, latDeg, lonDeg) {
@@ -423,9 +446,12 @@ class SunAltService {
         return "NIGHT";
     }
 
-    function _getTodayWindow(nowTs) {
-        var clock = System.getClockTime();
-        var secondsSinceMidnight = (clock.hour * 3600) + (clock.min * 60) + clock.sec;
+    function _getTodayWindow(nowTs as Number) as Lang.Dictionary {
+        // 使用传入的 nowTs 计算当天 00:00 的时间戳
+        var info = Time.Gregorian.info(new Time.Moment(nowTs), Time.FORMAT_SHORT);
+        var secondsSinceMidnight = (info[:hour] as Number) * 3600 
+                                  + (info[:min] as Number) * 60 
+                                  + (info[:sec] as Number);
         var startTs = nowTs - secondsSinceMidnight;
         return {
             :startTs => startTs,

@@ -4,7 +4,7 @@ import Toybox.Time;
 
 class LocationService {
     const FIX_REQUEST_MIN_INTERVAL_SEC = 5;
-    const TEST_MODE = true;  // 测试模式：使用硬编码位置（上海）
+    const TEST_MODE = false;  // 生产模式：使用真实 GPS
 
     var _lastFix as Lang.Dictionary or Null;
     var _lastRequestTs as Number;
@@ -12,20 +12,10 @@ class LocationService {
     function initialize() {
         _lastFix = null;
         _lastRequestTs = 0;
-        
-        // 测试模式：立即设置上海的位置
-        if (TEST_MODE) {
-            _lastFix = {
-                :lat => 31.2304,   // 上海纬度
-                :lon => 121.4737,  // 上海经度
-                :ts => Time.now().value()
-            };
-            System.println("[LocationService] TEST_MODE: Using Shanghai (31.2304, 121.4737)");
-        }
     }
 
     function requestFixIfNeeded(nowTs as Number) as Void {
-        // 测试模式：跳过真实 GPS 请求
+        // 生产模式：使用真实 GPS
         if (TEST_MODE) {
             return;
         }

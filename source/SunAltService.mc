@@ -4,7 +4,7 @@ import Toybox.System;
 import Toybox.Time;
 
 class SunAltService {
-    const DEBUG_LOG = true;
+    const DEBUG_LOG = false;
     const LOC_CHANGE_THRESHOLD_DEG = 0.01;
     const COARSE_STEP_SEC = 1800;
     const BISECT_TOLERANCE_SEC = 1;

@@ -151,3 +151,47 @@
   - `/bin/zsh -lc 'SDK="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa"; open "$SDK/bin/ConnectIQ.app"; sleep 8'`
 - deploy/run：
   - `/bin/zsh -lc 'SDK="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa"; "$SDK/bin/monkeydo" bin/test_fenix7s_Goldentime.prg fenix7s'`
+
+---
+
+## 8. Git 远端操作统一约束
+
+1) **默认参数（所有远端操作）**
+- 必须默认带：`GIT_TERMINAL_PROMPT=0`
+- 必须默认带：`--progress`
+
+2) **超时策略（必要时）**
+- 当出现远端卡住/长时间无响应时，增加超时参数，避免命令无限等待。
+- 推荐示例：`git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 fetch --prune --progress origin`
+
+3) **常用模板**
+- `GIT_TERMINAL_PROMPT=0 git fetch --progress origin`
+- `GIT_TERMINAL_PROMPT=0 git pull --progress --ff-only origin main`
+- `GIT_TERMINAL_PROMPT=0 git push --progress origin main`
+
+---
+
+## 9. UI-only 修改协议
+
+- 允许修改范围（白名单）
+  - ✅ source/Golden-timeView.mc 中的 draw/onUpdate 绘制部分：坐标、字体、颜色、对齐、绘制顺序
+  - ✅ 资源/布局文件（如有）：resources/drawables/drawables.xml、resources/layouts/*.xml
+
+- 禁止修改范围（红线）
+- ❌ 任何服务层/计算层：source/SunAltService.mc 等
+- ❌ 任何 snapshot 字段键名与读取链路
+- ❌ 任何 hasFix/todayHas* 的过滤语义
+- ❌ 倒计时/时间文本的格式化语义（除非任务明确要求）
+
+- 冻结 token（出现即不得改动、不得注释）
+  - :nextBlueStartTs
+  - :nextGoldenStartTs
+  - :todayHasBlueStart
+  - :todayHasGoldenStart
+  - :hasFix
+  - 以及 _formatRemaining / _readSnapFields（如果你把它们抽出来）
+
+- 提交门禁（必须执行）
+	1.	git diff --name-only 必须只包含白名单文件
+	2.	git diff 中不得出现上述冻结 token 所在行的改动
+	3.	不满足则自动撤销改动并报告“越界”

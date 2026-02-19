@@ -141,10 +141,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
     }
 
     function _getBackgroundBitmap(phase as String) as WatchUi.BitmapResource {
-        if (phase == "GOLDEN") {
+        if (phase != null && phase.equals("GOLDEN")) {
             return WatchUi.loadResource(Rez.Drawables.bg_golden) as WatchUi.BitmapResource;
         }
-        if (phase == "NIGHT") {
+        if (phase != null && phase.equals("NIGHT")) {
             return WatchUi.loadResource(Rez.Drawables.bg_night) as WatchUi.BitmapResource;
         }
         return WatchUi.loadResource(Rez.Drawables.bg_day) as WatchUi.BitmapResource;
@@ -208,10 +208,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
     }
 
     function _getCelestialBitmap(phase as String) as WatchUi.BitmapResource {
-        if (phase == "NIGHT") {
+        if (phase != null && phase.equals("NIGHT")) {
             return WatchUi.loadResource(Rez.Drawables.moon_night) as WatchUi.BitmapResource;
         }
-        if (phase == "GOLDEN") {
+        if (phase != null && phase.equals("GOLDEN")) {
             return WatchUi.loadResource(Rez.Drawables.sun_golden) as WatchUi.BitmapResource;
         }
         return WatchUi.loadResource(Rez.Drawables.sun_day) as WatchUi.BitmapResource;
@@ -358,10 +358,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
     }
 
     function _phaseFromMode(mode as String or Null) as String {
-        if (mode == "GOLDEN") {
+        if (mode != null && mode.equals("GOLDEN")) {
             return "GOLDEN";
         }
-        if (mode == "NIGHT") {
+        if (mode != null && mode.equals("NIGHT")) {
             return "NIGHT";
         }
         return "DAY";

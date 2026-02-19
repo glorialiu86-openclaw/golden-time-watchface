@@ -276,7 +276,7 @@ class SunAltService {
             System.println(Lang.format("[_scanPeriod] start=$1$ end=$2$ isMorning=$3$", [startTs, endTs, isMorning ? "1" : "0"]));
         }
         
-        // 六个关键时间点：
+        // 六个关键时间点（摄影标准：Golden -4°~+6°, Blue -10°~-4°）：
         // 1. 晨蓝调起点（-10°，上升）
         // 2. 晨蓝调结束 = 晨金调起点（-4°，上升）
         // 3. 晨金调结束（+6°，上升）

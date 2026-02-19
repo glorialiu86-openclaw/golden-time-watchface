@@ -133,6 +133,10 @@ class SunAltService {
                 :altDeg => null,
                 :nextGoldenStartTs => null,
                 :nextBlueStartTs => null,
+                :morningBlueStartTs => null,
+                :morningGoldenEndTs => null,
+                :eveningGoldenStartTs => null,
+                :eveningBlueEndTs => null,
                 :todayHasGoldenStart => false,
                 :todayHasBlueStart => false,
                 :dayStartUtc => dayStartUtc,
@@ -149,6 +153,10 @@ class SunAltService {
         // 查找下一次 Golden Hour 和 Blue Hour（不区分早晚）
         var nextGolden = _findNextGoldenOrBlue(_cachedEvents, nowTs, "GOLDEN");
         var nextBlue = _findNextGoldenOrBlue(_cachedEvents, nowTs, "BLUE");
+        var morningBlueStartTs = _findFirstEventTsByType(_cachedEvents, "MORNING_BLUE_START");
+        var morningGoldenEndTs = _findFirstEventTsByType(_cachedEvents, "MORNING_GOLDEN_END");
+        var eveningGoldenStartTs = _findFirstEventTsByType(_cachedEvents, "EVENING_GOLDEN_START");
+        var eveningBlueEndTs = _findFirstEventTsByType(_cachedEvents, "EVENING_BLUE_END");
         
         if (DEBUG_LOG) {
             System.println(Lang.format("[getSnapshot] nowTs=$1$ nextGolden=$2$ nextBlue=$3$", [nowTs, nextGolden, nextBlue]));
@@ -160,6 +168,10 @@ class SunAltService {
             :altDeg => alt,
             :nextGoldenStartTs => nextGolden,
             :nextBlueStartTs => nextBlue,
+            :morningBlueStartTs => morningBlueStartTs,
+            :morningGoldenEndTs => morningGoldenEndTs,
+            :eveningGoldenStartTs => eveningGoldenStartTs,
+            :eveningBlueEndTs => eveningBlueEndTs,
             :todayHasGoldenStart => _hasGoldenOrBlue(_cachedEvents, "GOLDEN"),
             :todayHasBlueStart => _hasGoldenOrBlue(_cachedEvents, "BLUE"),
             :dbgDeltaMin => ((nextGolden != null && nextBlue != null) ? (((nextGolden as Number) - (nextBlue as Number)) / 60).toNumber() : null),
@@ -195,6 +207,23 @@ class SunAltService {
             }
         }
         return false;
+    }
+
+    function _findFirstEventTsByType(events as Array<Lang.Dictionary>, typeName as String) as Number or Null {
+        for (var i = 0; i < events.size(); i += 1) {
+            var e = events[i];
+            var t = e[:type];
+            if (t == null) { continue; }
+            var typeStr = t as String or Null;
+            if (typeStr != null && typeStr.find(typeName) != null) {
+                return e[:ts] as Number;
+            }
+            var typeText = Lang.format("$1$", [t]);
+            if (typeText.find(typeName) != null || t.toString().find(typeName) != null) {
+                return e[:ts] as Number;
+            }
+        }
+        return null;
     }
 
     function _computeWindowEvents(startTs as Number, lat as Number, lon as Number) as Lang.Dictionary {

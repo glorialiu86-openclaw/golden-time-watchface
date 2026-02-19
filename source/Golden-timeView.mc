@@ -7,14 +7,20 @@ import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
     const DEBUG_ENABLED = false;
+    const COLOR_WHITE = 0xFFFFFF;
+    const COLOR_BLACK = 0x000000;
+    const COLOR_BLUE  = 0x6B94B7;
+    const COLOR_GOLD  = 0xE3941C;
 
     var _locationService as LocationService;
     var _sunAltService as SunAltService;
+    var _phase as String;
 
     function initialize() {
         WatchFace.initialize();
         _locationService = new LocationService();
         _sunAltService = new SunAltService();
+        _phase = "DAY";
     }
 
     function onLayout(dc as Dc) as Void {
@@ -31,6 +37,74 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
         _sunAltService.updateIfNeeded(nowTs, fix);
         var snap = _sunAltService.getSnapshot(nowTs);
+        var phase = _getPhase(nowTs, snap);
+        _phase = phase;
+
+        if (DEBUG_ENABLED) {
+            System.println("[SNAP_KEYS] [:mode, :hasFix, :altDeg, :nextGoldenStartTs, :nextBlueStartTs, :todayHasGoldenStart, :todayHasBlueStart, :dayStartUtc, :windowStartTs, :windowEndTs, :dbgDeltaMin, :morningBlueStartTs, :morningGoldenEndTs, :eveningGoldenStartTs, :eveningBlueEndTs]");
+            System.println(Lang.format("[SNAP_FULL] $1$", [snap.toString()]));
+            System.println(Lang.format(
+                "[SNAP_MAP] phase=$1$ mode=$2$ hasFix=$3$ altDeg=$4$ nextGoldenStartTs=$5$ nextBlueStartTs=$6$ todayHasGoldenStart=$7$ todayHasBlueStart=$8$ dayStartUtc=$9$ windowStartTs=$10$ windowEndTs=$11$ dbgDeltaMin=$12$ morningBlueStartTs=$13$ morningGoldenEndTs=$14$ eveningGoldenStartTs=$15$ eveningBlueEndTs=$16$",
+                [
+                    phase,
+                    snap[:mode],
+                    snap[:hasFix],
+                    snap[:altDeg],
+                    snap[:nextGoldenStartTs],
+                    snap[:nextBlueStartTs],
+                    snap[:todayHasGoldenStart],
+                    snap[:todayHasBlueStart],
+                    snap[:dayStartUtc],
+                    snap[:windowStartTs],
+                    snap[:windowEndTs],
+                    snap[:dbgDeltaMin],
+                    snap[:morningBlueStartTs],
+                    snap[:morningGoldenEndTs],
+                    snap[:eveningGoldenStartTs],
+                    snap[:eveningBlueEndTs]
+                ]
+            ));
+            var morningBlueStartTs = snap[:morningBlueStartTs] as Number or Null;
+            var morningGoldenEndTs = snap[:morningGoldenEndTs] as Number or Null;
+            var eveningGoldenStartTs = snap[:eveningGoldenStartTs] as Number or Null;
+            var eveningBlueEndTs = snap[:eveningBlueEndTs] as Number or Null;
+            if (morningBlueStartTs != null && morningGoldenEndTs != null && eveningGoldenStartTs != null && eveningBlueEndTs != null) {
+                var morningProbe = ((morningBlueStartTs as Number) + (((morningGoldenEndTs as Number) - (morningBlueStartTs as Number)) / 2.0)).toNumber();
+                var dayProbe = ((morningGoldenEndTs as Number) + (((eveningGoldenStartTs as Number) - (morningGoldenEndTs as Number)) / 2.0)).toNumber();
+                var eveningProbe = ((eveningGoldenStartTs as Number) + (((eveningBlueEndTs as Number) - (eveningGoldenStartTs as Number)) / 2.0)).toNumber();
+                var nightProbe = (morningBlueStartTs as Number) - 60;
+                System.println(Lang.format(
+                    "[PHASE_TEST] morningProbe=$1$=>$2$ dayProbe=$3$=>$4$ eveningProbe=$5$=>$6$ nightProbe=$7$=>$8$",
+                    [
+                        morningProbe,
+                        _getPhase(morningProbe, snap),
+                        dayProbe,
+                        _getPhase(dayProbe, snap),
+                        eveningProbe,
+                        _getPhase(eveningProbe, snap),
+                        nightProbe,
+                        _getPhase(nightProbe, snap)
+                    ]
+                ));
+            }
+            var phaseTestSnap = {
+                :hasFix => true,
+                :mode => "DAY",
+                :morningBlueStartTs => 100,
+                :morningGoldenEndTs => 200,
+                :eveningGoldenStartTs => 500,
+                :eveningBlueEndTs => 600
+            };
+            System.println(Lang.format(
+                "[PHASE_TEST_MOCK] morning=$1$ day=$2$ evening=$3$ night=$4$",
+                [
+                    _getPhase(150, phaseTestSnap),
+                    _getPhase(300, phaseTestSnap),
+                    _getPhase(550, phaseTestSnap),
+                    _getPhase(50, phaseTestSnap)
+                ]
+            ));
+        }
 
         _drawBackground(dc);
         _drawTime(dc, w, h);
@@ -48,16 +122,28 @@ class GoldenTimeView extends WatchUi.WatchFace {
         }
         var blueText = Lang.format("b=$1$", [_formatRemaining(nowTs, blueTs)]);
         var goldenText = Lang.format("g=$1$", [_formatRemaining(nowTs, goldenTs)]);
-        System.println(Lang.format(
-            "[SNAPSHOT] buildId=v1.1 dayStartUtc=$1$ windowStartTs=$2$ windowEndTs=$3$ blueCountdown=$4$ goldenCountdown=$5$ blueTs=$6$ goldenTs=$7$",
-            [snap[:dayStartUtc], snap[:windowStartTs], snap[:windowEndTs], blueText, goldenText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
-        ));
+        if (DEBUG_ENABLED) {
+            System.println(Lang.format(
+                "[SNAPSHOT] buildId=v1.1 phase=$1$ dayStartUtc=$2$ windowStartTs=$3$ windowEndTs=$4$ blueCountdown=$5$ goldenCountdown=$6$ blueTs=$7$ goldenTs=$8$",
+                [phase, snap[:dayStartUtc], snap[:windowStartTs], snap[:windowEndTs], blueText, goldenText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
+            ));
+        }
 
     }
 
     function _drawBackground(dc as Dc) as Void {
-        dc.setColor(0xFFFFFF, 0x000000);
-        dc.clear();
+        var bmp = _getBackgroundBitmap(_phase);
+        dc.drawBitmap(0, 0, bmp);
+    }
+
+    function _getBackgroundBitmap(phase as String) as WatchUi.BitmapResource {
+        if (phase == "GOLDEN") {
+            return WatchUi.loadResource(Rez.Drawables.bg_golden) as WatchUi.BitmapResource;
+        }
+        if (phase == "NIGHT") {
+            return WatchUi.loadResource(Rez.Drawables.bg_night) as WatchUi.BitmapResource;
+        }
+        return WatchUi.loadResource(Rez.Drawables.bg_day) as WatchUi.BitmapResource;
     }
 
     function _drawTime(dc as Dc, w as Number, h as Number) as Void {
@@ -70,7 +156,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var safeBottom = h - (insets[:bottom] as Number) - 6;
         var safeH = safeBottom - safeTop;
 
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+        var mainColor = (_phase == "DAY") ? COLOR_BLACK : COLOR_WHITE;
+        dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, safeTop + (safeH * 0.37), Graphics.FONT_LARGE, text, Graphics.TEXT_JUSTIFY_CENTER);
     }
 
@@ -88,7 +175,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var insets = _getSafeInsets(dc);
         var safeTop = (insets[:top] as Number) + 6;
 
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+        var mainColor = (_phase == "DAY") ? COLOR_BLACK : COLOR_WHITE;
+        dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w / 2, safeTop + 16, Graphics.FONT_TINY, dateText, Graphics.TEXT_JUSTIFY_CENTER);
     }
 
@@ -135,11 +223,11 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var blueValueX = _clamp(leftCenterX, safeLeft + (blueValueW / 2), safeRight - (blueValueW / 2));
         var goldValueX = _clamp(rightCenterX, safeLeft + (goldValueW / 2), safeRight - (goldValueW / 2));
 
-        dc.setColor(0xFFFFFF, Graphics.COLOR_TRANSPARENT);
+        dc.setColor(COLOR_BLUE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(blueX, yLabel, fontLabel, blueLabel, Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(blueValueX, yValue, fontValue, blueText, Graphics.TEXT_JUSTIFY_CENTER);
 
-        dc.setColor(0xFFAA00, Graphics.COLOR_TRANSPARENT);
+        dc.setColor(COLOR_GOLD, Graphics.COLOR_TRANSPARENT);
         dc.drawText(goldX, yLabel, fontLabel, goldLabel, Graphics.TEXT_JUSTIFY_CENTER);
         dc.drawText(goldValueX, yValue, fontValue, goldenText, Graphics.TEXT_JUSTIFY_CENTER);
 
@@ -203,6 +291,40 @@ class GoldenTimeView extends WatchUi.WatchFace {
             return maxV;
         }
         return x;
+    }
+
+    function _getPhase(nowTs as Number, snap as Lang.Dictionary) as String {
+        var hasFix = ((snap[:hasFix] as Boolean) || false);
+        if (!hasFix) {
+            return "DAY";
+        }
+
+        var morningBlueStartTs = snap[:morningBlueStartTs] as Number or Null;
+        var morningGoldenEndTs = snap[:morningGoldenEndTs] as Number or Null;
+        var eveningGoldenStartTs = snap[:eveningGoldenStartTs] as Number or Null;
+        var eveningBlueEndTs = snap[:eveningBlueEndTs] as Number or Null;
+        if (morningBlueStartTs == null || morningGoldenEndTs == null || eveningGoldenStartTs == null || eveningBlueEndTs == null) {
+            return _phaseFromMode(snap[:mode] as String or Null);
+        }
+
+        if ((nowTs >= (morningBlueStartTs as Number) && nowTs < (morningGoldenEndTs as Number))
+            || (nowTs >= (eveningGoldenStartTs as Number) && nowTs < (eveningBlueEndTs as Number))) {
+            return "GOLDEN";
+        }
+        if (nowTs >= (morningGoldenEndTs as Number) && nowTs < (eveningGoldenStartTs as Number)) {
+            return "DAY";
+        }
+        return "NIGHT";
+    }
+
+    function _phaseFromMode(mode as String or Null) as String {
+        if (mode == "GOLDEN") {
+            return "GOLDEN";
+        }
+        if (mode == "NIGHT") {
+            return "NIGHT";
+        }
+        return "DAY";
     }
 
 }

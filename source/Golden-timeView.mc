@@ -9,8 +9,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
     const DEBUG_ENABLED = false;
     const COLOR_WHITE = 0xFFFFFF;
     const COLOR_BLACK = 0x000000;
-    const COLOR_BLUE  = 0x6B94B7;
-    const COLOR_GOLD  = 0xE3941C;
+    const COLOR_BLUE  = 0x8094B5;
+    const COLOR_GOLD  = 0xFFAA00;
 
     var _locationService as LocationService;
     var _sunAltService as SunAltService;
@@ -41,6 +41,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
         _phase = phase;
 
         if (DEBUG_ENABLED) {
+            System.println(Lang.format("[PHASE_BYTES] phaseText=$1$", [Lang.format("$1$", [_phase])]));
+            System.println(Lang.format("[PHASE_TOSTR] phaseToString=$1$", [_phase.toString()]));
             System.println("[SNAP_KEYS] [:mode, :hasFix, :altDeg, :nextGoldenStartTs, :nextBlueStartTs, :todayHasGoldenStart, :todayHasBlueStart, :dayStartUtc, :windowStartTs, :windowEndTs, :dbgDeltaMin, :morningBlueStartTs, :morningGoldenEndTs, :eveningGoldenStartTs, :eveningBlueEndTs]");
             System.println(Lang.format("[SNAP_FULL] $1$", [snap.toString()]));
             System.println(Lang.format(
@@ -110,6 +112,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         _drawTime(dc, w, h);
         _drawDate(dc, nowMoment, w, h);
         _drawDualCountdown(dc, snap, nowTs, w, h);
+        _drawCelestial(dc);
 
         var hasFix = snap[:hasFix] as Boolean;
         var blueTs = hasFix ? (snap[:nextBlueStartTs] as Number or Null) : null;
@@ -123,6 +126,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var blueText = Lang.format("b=$1$", [_formatRemaining(nowTs, blueTs)]);
         var goldenText = Lang.format("g=$1$", [_formatRemaining(nowTs, goldenTs)]);
         if (DEBUG_ENABLED) {
+            System.println(Lang.format("[BG_PICK] phase=$1$", [_phase]));
             System.println(Lang.format(
                 "[SNAPSHOT] buildId=v1.1 phase=$1$ dayStartUtc=$2$ windowStartTs=$3$ windowEndTs=$4$ blueCountdown=$5$ goldenCountdown=$6$ blueTs=$7$ goldenTs=$8$",
                 [phase, snap[:dayStartUtc], snap[:windowStartTs], snap[:windowEndTs], blueText, goldenText, snap[:nextBlueStartTs], snap[:nextGoldenStartTs]]
@@ -151,14 +155,25 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var hh = clock.hour.format("%02d");
         var mm = clock.min.format("%02d");
         var text = Lang.format("$1$:$2$", [hh, mm]);
-        var insets = _getSafeInsets(dc);
-        var safeTop = (insets[:top] as Number) + 6;
-        var safeBottom = h - (insets[:bottom] as Number) - 6;
-        var safeH = safeBottom - safeTop;
 
-        var mainColor = (_phase == "DAY") ? COLOR_BLACK : COLOR_WHITE;
+        var isDay = (_phase != null) && (_phase as String).equals("DAY");
+        var mainColor;
+        if (isDay) {
+            mainColor = 0x000000;
+        } else {
+            mainColor = 0xFFFFFF;
+        }
+        if (DEBUG_ENABLED) {
+            System.println(Lang.format("[COLOR_MAIN] func=_drawTime phase=$1$ mainColor=$2$ cond=$3$", [_phase, mainColor, isDay]));
+        }
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, safeTop + (safeH * 0.37), Graphics.FONT_LARGE, text, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(
+            w / 2,
+            77,
+            Graphics.FONT_NUMBER_HOT,
+            text,
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER
+        );
     }
 
     function _drawDate(dc as Dc, nowMoment as Time.Moment, w as Number, h as Number) as Void {
@@ -172,19 +187,46 @@ class GoldenTimeView extends WatchUi.WatchFace {
             monthNames[monthIdx],
             (info[:day] as Number).format("%02d")
         ]);
-        var insets = _getSafeInsets(dc);
-        var safeTop = (insets[:top] as Number) + 6;
-
-        var mainColor = (_phase == "DAY") ? COLOR_BLACK : COLOR_WHITE;
+        var isDay = (_phase != null) && (_phase as String).equals("DAY");
+        var mainColor;
+        if (isDay) {
+            mainColor = 0x000000;
+        } else {
+            mainColor = 0xFFFFFF;
+        }
+        if (DEBUG_ENABLED) {
+            System.println(Lang.format("[COLOR_MAIN] func=_drawDate phase=$1$ mainColor=$2$ cond=$3$", [_phase, mainColor, isDay]));
+        }
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, safeTop + 16, Graphics.FONT_TINY, dateText, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(
+            w / 2,
+            35,
+            Graphics.FONT_TINY,
+            dateText,
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER
+        );
+    }
+
+    function _getCelestialBitmap(phase as String) as WatchUi.BitmapResource {
+        if (phase == "NIGHT") {
+            return WatchUi.loadResource(Rez.Drawables.moon_night) as WatchUi.BitmapResource;
+        }
+        if (phase == "GOLDEN") {
+            return WatchUi.loadResource(Rez.Drawables.sun_golden) as WatchUi.BitmapResource;
+        }
+        return WatchUi.loadResource(Rez.Drawables.sun_day) as WatchUi.BitmapResource;
+    }
+
+    function _drawCelestial(dc as Dc) as Void {
+        var bmp = _getCelestialBitmap(_phase);
+        dc.drawBitmap(0, 0, bmp);
     }
 
     function _drawDualCountdown(dc as Dc, snap as Lang.Dictionary, nowTs as Number, w as Number, h as Number) as Void {
         var hasFix = snap[:hasFix] as Boolean;
         var pad = 6;
-        var fontLabel = Graphics.FONT_TINY;
-        var fontValue = Graphics.FONT_SMALL;
+        var fontLabel = Graphics.FONT_XTINY;
+        var fontValue = Graphics.FONT_MEDIUM;
         var insets = _getSafeInsets(dc);
         var safeLeft = (insets[:left] as Number) + pad;
         var safeRight = w - (insets[:right] as Number) - pad;
@@ -206,13 +248,14 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var blueText = _formatRemaining(nowTs, blueTs);
         var goldenText = _formatRemaining(nowTs, goldenTs);
 
-        var yLabel = safeBottom - 42;
-        var yValue = safeBottom - 20;
-        var leftCenterX = safeLeft + (safeW * 0.30);
-        var rightCenterX = safeLeft + (safeW * 0.70);
+        var blockCenterY = 180;
+        var yLabel = blockCenterY - 12;
+        var yValue = blockCenterY + 12;
+        var leftCenterX = 80;
+        var rightCenterX = 160;
 
-        var blueLabel = "Blue";
-        var goldLabel = "Golden";
+        var blueLabel = "BLUE";
+        var goldLabel = "GOLDEN";
         var blueLabelW = dc.getTextWidthInPixels(blueLabel, fontLabel);
         var goldLabelW = dc.getTextWidthInPixels(goldLabel, fontLabel);
         var blueValueW = dc.getTextWidthInPixels(blueText, fontValue);
@@ -224,16 +267,13 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var goldValueX = _clamp(rightCenterX, safeLeft + (goldValueW / 2), safeRight - (goldValueW / 2));
 
         dc.setColor(COLOR_BLUE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(blueX, yLabel, fontLabel, blueLabel, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(blueValueX, yValue, fontValue, blueText, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(blueX, yLabel, fontLabel, blueLabel, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(blueValueX, yValue, fontValue, blueText, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         dc.setColor(COLOR_GOLD, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(goldX, yLabel, fontLabel, goldLabel, Graphics.TEXT_JUSTIFY_CENTER);
-        dc.drawText(goldValueX, yValue, fontValue, goldenText, Graphics.TEXT_JUSTIFY_CENTER);
+        dc.drawText(goldX, yLabel, fontLabel, goldLabel, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(goldValueX, yValue, fontValue, goldenText, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
-        dc.setColor(0x555555, Graphics.COLOR_TRANSPARENT);
-        dc.fillRectangle((w / 2) - 1, yLabel - 2, 2, 26);
-        
         // L2 验证：显示版本号
         dc.setColor(0x888888, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w - 5, h - 15, Graphics.FONT_XTINY, "v1.1", Graphics.TEXT_JUSTIFY_RIGHT);

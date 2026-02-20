@@ -169,7 +169,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(
             w / 2,
-            77,
+            73,
             Graphics.FONT_NUMBER_HOT,
             text,
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER
@@ -200,7 +200,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.setColor(mainColor, Graphics.COLOR_TRANSPARENT);
         dc.drawText(
             w / 2,
-            35,
+            31,
             Graphics.FONT_TINY,
             dateText,
             Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER

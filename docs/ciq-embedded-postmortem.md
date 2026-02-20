@@ -1,10 +1,97 @@
 # Garmin Connect IQ / Monkey C 嵌入式开发复盘与排障手册
 
-**项目**：Golden-time 表盘  
+**项目**：Golden-time 表盘（可迁移模板）  
 **开发周期**：2026-02-18 ~ 2026-02-20（48小时）  
-**SDK 版本**：Connect IQ SDK 8.4.1  
-**目标设备**：Garmin Fenix 7S  
+**SDK 版本**：Connect IQ SDK `<CIQ_SDK_VERSION>`  
+**目标设备**：`<TARGET_DEVICE>`  
 **开发环境**：macOS + VS Code + Monkey C 扩展
+
+---
+
+## 文档健康检查（由 Codex 生成）
+
+本节是文档工程质量审计（非代码审计），用于判断该文档是否可跨仓库复用。
+
+- 硬编码路径：存在。原文多处使用本机绝对路径和固定截图目录，已统一改为 `<REPO_ROOT>/...` 或环境变量形式。
+- 设备型号写死：存在。原文多处固定为 `<TARGET_DEVICE>`，已统一改为 `<TARGET_DEVICE>` 占位。
+- SDK 版本强绑定：存在。原文固定具体 SDK 小版本及安装目录后缀，已统一改为 `<CIQ_SDK_VERSION>` 占位。
+- 步骤缺少失败回退：存在。已补充“构建/运行失败快速分诊图”并为每类故障给出第一检查点。
+- 重复或语义重叠：存在。原“常见错误总表”“快速排障决策树”“遇到问题时”有重叠；本次新增热力表与分诊图作为统一入口，原内容保留为扩展阅读。
+- 无法独立执行步骤：存在。原文部分步骤依赖本仓库上下文（如提交号、特定脚本名）；已新增“迁移到新表盘仓库的步骤”用于独立落地。
+
+判定结论：经占位符化与新增路由后，可作为跨仓库 CIQ 排障基线文档使用。
+
+---
+
+## 迁移到新表盘仓库的步骤
+
+1. 复制 `docs/ciq-embedded-postmortem.md` 与 `docs/ciq-preflight-checklist.md` 到新仓库 `docs/`。
+2. 在新仓库 `README.md` 添加两条入口链接，指向上述两份文档。
+3. 全仓替换占位符：`<REPO_ROOT>`、`<TARGET_DEVICE>`、`<CIQ_SDK_VERSION>`。
+4. 将构建命令中的输出产物名替换为新项目产物（如 `<REPO_ROOT>/bin/<APP_NAME>.prg`）。
+5. 把“证据来源”字段改为新仓库真实证据（脚本路径、构建日志、commit）。
+6. 若暂时没有证据，保留规则但在条目末尾标记“经验性规则（Heuristic）”。
+7. 在首次可运行后，补录一次“编译成功 + 模拟器运行 + 真机验证（如有）”日志样本。
+
+---
+
+## 构建/运行失败快速分诊图
+
+目标：30 秒内确定第一排查方向。
+
+1. 编译期失败（`monkeyc` 报错）
+第一检查点：确认 `monkeyc` 路径与 `<CIQ_SDK_VERSION>` 是否匹配，且 `--device <TARGET_DEVICE>` 与 `monkey.jungle` 一致。
+2. rez/资源失败（`resource not found`、尺寸不兼容）
+第一检查点：检查 `<REPO_ROOT>/resources/` 与 `manifest.xml` 资源引用名是否一致。
+3. 模拟器异常（无法连接、黑屏、无变化）
+第一检查点：先启动 Connect IQ GUI，再等待 5-8 秒后执行 `monkeydo`；确认产物时间戳是最新。
+4. 真机异常（模拟器正常但真机异常）
+第一检查点：检查 `.iq`/`.prg` 是否为同一构建产物，确认权限、API 等级、设备能力是否匹配。
+5. 时间/算法逻辑异常（倒计时错误、时区偏差）
+第一检查点：对照固定输入（经纬度 + UTC 时间戳）跑 Python/日志双轨比对，先确认基准一致。
+6. 日志为空（无 `System.println`）
+第一检查点：先判定是否执行到目标路径；若不稳定，切换 UI 可观测验证（显示版本号/状态码）。
+
+---
+
+## CIQ 常见错误概率热力表
+
+| 错误类别 | 发生概率 | 典型触发场景 | 首选检查动作 | 是否曾在本项目出现 |
+|---|---|---|---|---|
+| SDK 路径/命令不可用 | High | 新机器或 SDK 切换后直接构建 | 打印 `SDK_BIN` 并执行 `monkeyc --help` | Yes |
+| 设备目标不匹配 | High | `--device` 与 jungle/模拟器目标不一致 | 统一 `<TARGET_DEVICE>` 并重编译 | Yes |
+| 资源引用/尺寸问题 | High | 替换图标或布局文件后 | 核对 `manifest.xml` 与 `<REPO_ROOT>/resources/` | Yes |
+| 日志为空导致不可诊断 | Medium | 代码提前 return、日志缓冲、路径未执行 | 增加路径日志或切 UI 证据 | Yes |
+| 时区/UTC 基准混乱 | Medium | 算法从脚本移植到 Monkey C | 固定输入比对 UTC 计算链路 | Yes |
+| 变量绑定错误（语义正确但值错误） | Medium | 多阶段阈值变量命名不清 | 检查是否存在 `var a = b` 式误绑定 | Yes |
+| 模拟器连接失败 | Medium | 直接 `monkeydo` 未先启动 GUI | 回到“open GUI -> wait -> monkeydo” | Yes |
+| 真机特有崩溃 | Low | 权限/API/内存差异在真机暴露 | 最小包验证并核对权限与 API | No |
+
+说明：
+- `是否曾在本项目出现=Yes` 的条目来自本仓库文档证据（构建日志、commit、脚本记录）。
+- `Low` 概率并不代表低风险，真机异常通常影响发布质量。
+
+---
+
+## 模拟器可信度边界
+
+可相信模拟器的现象（仓库证据）：
+- 编译后是否能加载最新 `.prg`（可由产物时间戳和界面变化验证）。
+- 纯 UI 布局是否越界/被裁切（基础排版问题可在模拟器先发现）。
+- 基础逻辑分支是否触发（通过日志或 UI 状态码）。
+
+必须以真机为准的现象（经验性规则 Heuristic）：
+- GPS fix 速度与稳定性、后台行为、传感器噪声、功耗表现。
+- 不同固件版本下的权限行为和性能边界。
+- 长时间运行后的内存压力与回收行为。
+
+模拟器经常“假正常”的场景（经验性规则 Heuristic）：
+- 权限链路在模拟器可通过，但真机受限。
+- 资源/性能边界在模拟器无感，真机出现卡顿或崩溃。
+
+模拟器经常“假异常”的场景（仓库证据 + 经验性规则）：
+- “Unable to connect to simulator” 常由启动顺序引起，不代表程序有错（仓库已有该类记录）。
+- 日志偶发为空，不等于逻辑未执行，应切换 L2/L3 证据链。
 
 ---
 
@@ -31,7 +118,7 @@
    ```bash
    # 下载地址：https://developer.garmin.com/connect-iq/sdk/
    # macOS 默认安装路径：
-   ~/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-*/
+   <CIQ_SDK_ROOT>/connectiq-sdk-<CIQ_SDK_VERSION>-*/
    ```
 
 2. **配置开发者密钥**
@@ -48,23 +135,23 @@
 
 ### 2.2 构建与运行
 
-**标准构建命令**（来自 `deploy.sh`）：
+**标准构建命令**（来自 `<REPO_ROOT>/deploy.sh`）：
 ```bash
-SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa/bin"
+SDK_BIN="<CIQ_SDK_ROOT>/connectiq-sdk-<CIQ_SDK_VERSION>/bin"
 
 # 构建
 "$SDK_BIN/monkeyc" \
     --jungles monkey.jungle \
-    --device fenix7s \
-    --output bin/Golden-time.prg \
+    --device <TARGET_DEVICE> \
+    --output <REPO_ROOT>/bin/Golden-time.prg \
     --private-key developer_key \
     --warn
 
 # 部署到模拟器
-"$SDK_BIN/monkeydo" bin/Golden-time.prg fenix7s
+"$SDK_BIN/monkeydo" <REPO_ROOT>/bin/Golden-time.prg <TARGET_DEVICE>
 ```
 
-**证据来源**：`deploy.sh` (commit 04db559)
+**证据来源**：`<REPO_ROOT>/deploy.sh` (commit 04db559)
 
 ### 2.3 验证流程
 
@@ -77,12 +164,12 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
 
 2. **Monkey C 编译**
    ```bash
-   monkeyc --device fenix7s --jungles monkey.jungle --output bin/test.prg
+   monkeyc --device <TARGET_DEVICE> --jungles monkey.jungle --output <REPO_ROOT>/bin/test.prg
    ```
 
 3. **模拟器/真机验证**
    ```bash
-   monkeydo bin/test.prg fenix7s
+   monkeydo <REPO_ROOT>/bin/test.prg <TARGET_DEVICE>
    # 检查 [SNAPSHOT] 日志输出
    ```
 
@@ -94,7 +181,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
 
 | 错误现象 | 典型报错关键词 | 根因类别 | 快速判断 | 解决步骤 | 预防措施 | 证据来源 |
 |---------|---------------|---------|---------|---------|---------|---------|
-| 编译失败：找不到 monkeyc | `command not found` | 环境配置 | 检查 SDK 是否安装 | 使用完整路径：`$SDK_BIN/monkeyc` | 在脚本中硬编码 SDK 路径 | `deploy.sh` 修复记录 |
+| 编译失败：找不到 monkeyc | `command not found` | 环境配置 | 检查 SDK 是否安装 | 使用完整路径：`$SDK_BIN/monkeyc` | 在脚本中硬编码 SDK 路径 | `<REPO_ROOT>/deploy.sh` 修复记录 |
 | 编译警告：图标尺寸不匹配 | `launcher icon (24x24) isn't compatible` | 资源配置 | 检查 manifest.xml | 提供 40x40 图标或忽略警告 | 按设备要求准备多尺寸图标 | 构建输出 (2026-02-20) |
 | 运行时：倒计时显示 `--:--` | `blueTs=null goldenTs=null` | 算法逻辑 | 检查 [SNAPSHOT] 日志 | 验证算法返回值，检查变量绑定 | 先用 Python 验证算法 | commit 0b149b4 |
 | 变量值相同（应该不同） | `blueStart == goldenEnd` | 变量绑定错误 | 打印变量值对比 | 检查是否有 `var a = b;` 导致共享引用 | 使用独立变量，避免互相赋值 | commit 0b149b4, PRD 5.1 |
@@ -114,7 +201,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
 ### 4.1 资源编译（rez）
 
 **问题**：图标尺寸不匹配
-- **现象**：`WARNING: The launcher icon (24x24) isn't compatible with the specified launcher icon size of the device 'fenix7s' (40x40)`
+- **现象**：`WARNING: The launcher icon (24x24) isn't compatible with the specified launcher icon size of the device '<TARGET_DEVICE>' (40x40)`
 - **根因**：不同设备要求不同尺寸的启动图标
 - **解决**：
   1. 准备多尺寸图标（24x24, 40x40, 80x80）
@@ -132,7 +219,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
   project.manifest = manifest.xml
   
   # 命令行必须匹配
-  monkeyc --device fenix7s --jungles monkey.jungle
+  monkeyc --device <TARGET_DEVICE> --jungles monkey.jungle
   ```
 - **证据**：`monkey.jungle` 内容
 
@@ -192,7 +279,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
   1. 检查 .iq 文件大小（本项目：53KB）
   2. 检查 manifest.xml 中的权限和 API 级别
   3. 使用 `--package-app` 生成完整包
-- **证据**：`deploy.sh` 构建命令
+- **证据**：`<REPO_ROOT>/deploy.sh` 构建命令
 
 ---
 
@@ -239,7 +326,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
   1. 使用系统快捷键手动截图：`Cmd + Shift + 4 + 空格`
   2. 修改系统截图保存位置：
      ```bash
-     defaults write com.apple.screencapture location /path/to/screenshots
+     defaults write com.apple.screencapture location <REPO_ROOT>/screenshots
      killall SystemUIServer
      ```
 - **证据**：`screenshot.sh` 修复记录
@@ -265,7 +352,7 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
 
 - [ ] 算法先用 Python 验证通过
 - [ ] 准备了多尺寸启动图标
-- [ ] 设置了自动化构建脚本（如 `deploy.sh`）
+- [ ] 设置了自动化构建脚本（如 `<REPO_ROOT>/deploy.sh`）
 - [ ] 配置了截图保存目录
 - [ ] 准备了测试用的固定经纬度（如上海 31.2°N, 121.5°E）
 - [ ] 文档中记录了已知问题和解决方案
@@ -332,8 +419,8 @@ function calculateEvent() {
 [一句话描述问题]
 
 ## 环境信息
-- SDK 版本：connectiq-sdk-mac-8.4.1-2026-02-03-e9f77eeaa
-- 目标设备：fenix7s
+- SDK 版本：connectiq-sdk-<CIQ_SDK_VERSION>
+- 目标设备：<TARGET_DEVICE>
 - 开发环境：macOS 14.x + VS Code
 - Commit hash：[当前 commit]
 
@@ -353,7 +440,7 @@ function calculateEvent() {
 ```
 
 ## 截图/视频
-[保存到 docs/issues/screenshots/]
+[保存到 <REPO_ROOT>/docs/issues/screenshots/]
 
 ## 尝试过的解决方案
 - [ ] 方案 1：[描述] → [结果]
@@ -469,7 +556,7 @@ var eveningGoldenBlueBoundary = calculateThreshold(-4);  // 夜金调结束 = �
 1. **模拟器崩溃日志**：未能稳定抓取模拟器崩溃时的完整日志
 2. **真机部署失败**：未在真机上测试，缺少真机特有问题的案例
 3. **资源编译错误**：未遇到资源编译失败的案例，缺少相关排查经验
-4. **多设备适配**：仅在 Fenix 7S 上测试，缺少其他设备的适配经验
+4. **多设备适配**：仅在 <TARGET_DEVICE> 上测试，缺少其他设备的适配经验
 
 ### 10.2 下次需要补充的证据
 

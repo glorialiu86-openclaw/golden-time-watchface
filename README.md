@@ -16,16 +16,16 @@
 ./deploy.sh
 
 # 或手动构建
-SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-8.4.1-*/bin"
-"$SDK_BIN/monkeyc" --jungles monkey.jungle --device fenix7s --output bin/Golden-time.prg --warn
-"$SDK_BIN/monkeydo" bin/Golden-time.prg fenix7s
+SDK_BIN="<CIQ_SDK_ROOT>/connectiq-sdk-<CIQ_SDK_VERSION>/bin"
+"$SDK_BIN/monkeyc" --jungles monkey.jungle --device <TARGET_DEVICE> --output <REPO_ROOT>/bin/Golden-time.prg --warn
+"$SDK_BIN/monkeydo" <REPO_ROOT>/bin/Golden-time.prg <TARGET_DEVICE>
 ```
 
 ## 项目文档
 
 - [产品需求文档 (PRD)](Garmin%20Watch%20Face%20Golden-time%20PRD.md)
 - [UI 设计规范](WatchFace_UI_Specification.md)
-- [工作空间规则](~/.openclaw/workspace/AGENTS.md)
+- [工作空间规则](agents.md)
 
 ## 功能特性
 
@@ -37,8 +37,8 @@ SDK_BIN="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-m
 ## 技术栈
 
 - **语言**：Monkey C
-- **SDK**：Connect IQ SDK 8.4.1
-- **目标设备**：Garmin Fenix 7S（更多设备即将支持）
+- **SDK**：Connect IQ SDK <CIQ_SDK_VERSION>
+- **目标设备**：<TARGET_DEVICE>（更多设备即将支持）
 
 ## 开发状态
 

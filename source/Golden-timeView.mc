@@ -6,7 +6,9 @@ import Toybox.Time;
 import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
-    const DEBUG_ENABLED = false;
+    const DEBUG_ENABLED = true;
+    const FIX_STALE_MAX_AGE_SEC = 86400;
+    const POSITION_LOST_Y_OFFSET = 24;
     const COLOR_WHITE = 0xFFFFFF;
     const COLOR_BLACK = 0x000000;
     const COLOR_BLUE  = 0x8094B5;
@@ -46,10 +48,14 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
         _locationService.requestFixIfNeeded(nowTs);
         var fix = _locationService.getLastFix();
+        var positionLost = _isPositionLost(nowTs);
 
         _sunAltService.updateIfNeeded(nowTs, fix);
         var snap = _sunAltService.getSnapshot(nowTs);
         var phase = _getPhase(nowTs, snap);
+        if (positionLost) {
+            phase = "DAY";
+        }
         _phase = phase;
 
         if (DEBUG_ENABLED) {
@@ -127,7 +133,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         _drawBackground(dc);
         _drawTime(dc, w, h);
         _drawDate(dc, nowMoment, w, h);
-        _drawDualCountdown(dc, snap, nowTs, w, h);
+        _drawDualCountdown(dc, snap, nowTs, w, h, positionLost);
         _drawCelestial(dc);
 
         var hasFix = snap[:hasFix] as Boolean;
@@ -242,7 +248,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.drawBitmap(0, 0, bmp);
     }
 
-    function _drawDualCountdown(dc as Dc, snap as Lang.Dictionary, nowTs as Number, w as Number, h as Number) as Void {
+    function _drawDualCountdown(dc as Dc, snap as Lang.Dictionary, nowTs as Number, w as Number, h as Number, positionLost as Boolean) as Void {
         var hasFix = snap[:hasFix] as Boolean;
         var pad = 6;
         var fontLabel = Graphics.FONT_XTINY;
@@ -301,6 +307,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (isGoldenNow) {
             goldenText = "NOW";
         }
+        if (positionLost) {
+            blueText = "--:--";
+            goldenText = "--:--";
+        }
 
         var blockCenterY = 180;
         var yLabel = blockCenterY - 12;
@@ -328,6 +338,11 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.drawText(goldX, yLabel, fontLabel, goldLabel, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         dc.drawText(goldValueX, yValue, fontValue, goldenText, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
+        if (positionLost) {
+            dc.setColor(COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, yValue + POSITION_LOST_Y_OFFSET, Graphics.FONT_XTINY, "POSITION LOST", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        }
+
         // L2 验证：显示版本号
         dc.setColor(0x888888, Graphics.COLOR_TRANSPARENT);
         dc.drawText(w - 5, h - 15, Graphics.FONT_XTINY, "v1.1", Graphics.TEXT_JUSTIFY_RIGHT);
@@ -338,6 +353,25 @@ class GoldenTimeView extends WatchUi.WatchFace {
                 [w, h, safeLeft, safeRight, safeBottom, blueLabelW, goldLabelW, blueX, goldX]
             ));
         }
+    }
+
+    function _isPositionLost(nowTs as Number) as Boolean {
+        var fix = _locationService.getLastFix();
+        var fixTs = null;
+        var ageSec = null;
+        var lost = true;
+
+        if (fix != null && fix[:ts] != null) {
+            fixTs = fix[:ts] as Number;
+            ageSec = nowTs - (fixTs as Number);
+            lost = (ageSec as Number) > FIX_STALE_MAX_AGE_SEC;
+        }
+
+        if (DEBUG_ENABLED) {
+            System.println(Lang.format("[POS_LOST] nowTs=$1$ lost=$2$ fixTs=$3$ ageSec=$4$", [nowTs, lost, fixTs, ageSec]));
+        }
+
+        return lost;
     }
 
     function _formatStartTime(targetTs as Number or Null) as String {

@@ -4,7 +4,7 @@ import Toybox.Time;
 
 class LocationService {
     const FIX_REQUEST_MIN_INTERVAL_SEC = 5;
-    const TEST_MODE = true;  // 测试模式：硬编码上海位置
+    const TEST_MODE = false;  // 测试模式：硬编码上海位置
 
     var _lastFix as Lang.Dictionary or Null;
     var _lastRequestTs as Number;

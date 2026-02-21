@@ -55,10 +55,10 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (DEBUG_ENABLED) {
             System.println(Lang.format("[PHASE_BYTES] phaseText=$1$", [Lang.format("$1$", [_phase])]));
             System.println(Lang.format("[PHASE_TOSTR] phaseToString=$1$", [_phase.toString()]));
-            System.println("[SNAP_KEYS] [:mode, :hasFix, :altDeg, :nextGoldenStartTs, :nextBlueStartTs, :todayHasGoldenStart, :todayHasBlueStart, :dayStartUtc, :windowStartTs, :windowEndTs, :dbgDeltaMin, :morningBlueStartTs, :morningGoldenEndTs, :eveningGoldenStartTs, :eveningBlueEndTs]");
+            System.println("[SNAP_KEYS] [:mode, :hasFix, :altDeg, :nextGoldenStartTs, :nextBlueStartTs, :todayHasGoldenStart, :todayHasBlueStart, :dayStartUtc, :windowStartTs, :windowEndTs, :dbgDeltaMin, :morningBlueStartTs, :morningBlueEndTs, :morningGoldenStartTs, :morningGoldenEndTs, :eveningGoldenStartTs, :eveningGoldenEndTs, :eveningBlueStartTs, :eveningBlueEndTs]");
             System.println(Lang.format("[SNAP_FULL] $1$", [snap.toString()]));
             System.println(Lang.format(
-                "[SNAP_MAP] phase=$1$ mode=$2$ hasFix=$3$ altDeg=$4$ nextGoldenStartTs=$5$ nextBlueStartTs=$6$ todayHasGoldenStart=$7$ todayHasBlueStart=$8$ dayStartUtc=$9$ windowStartTs=$10$ windowEndTs=$11$ dbgDeltaMin=$12$ morningBlueStartTs=$13$ morningGoldenEndTs=$14$ eveningGoldenStartTs=$15$ eveningBlueEndTs=$16$",
+                "[SNAP_MAP] phase=$1$ mode=$2$ hasFix=$3$ altDeg=$4$ nextGoldenStartTs=$5$ nextBlueStartTs=$6$ todayHasGoldenStart=$7$ todayHasBlueStart=$8$ dayStartUtc=$9$ windowStartTs=$10$ windowEndTs=$11$ dbgDeltaMin=$12$ morningBlueStartTs=$13$ morningBlueEndTs=$14$ morningGoldenStartTs=$15$ morningGoldenEndTs=$16$ eveningGoldenStartTs=$17$ eveningGoldenEndTs=$18$ eveningBlueStartTs=$19$ eveningBlueEndTs=$20$",
                 [
                     phase,
                     snap[:mode],
@@ -73,8 +73,12 @@ class GoldenTimeView extends WatchUi.WatchFace {
                     snap[:windowEndTs],
                     snap[:dbgDeltaMin],
                     snap[:morningBlueStartTs],
+                    snap[:morningBlueEndTs],
+                    snap[:morningGoldenStartTs],
                     snap[:morningGoldenEndTs],
                     snap[:eveningGoldenStartTs],
+                    snap[:eveningGoldenEndTs],
+                    snap[:eveningBlueStartTs],
                     snap[:eveningBlueEndTs]
                 ]
             ));
@@ -153,7 +157,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
     }
 
     function _getBackgroundBitmap(phase as String) as WatchUi.BitmapResource {
-        if (phase != null && phase.equals("GOLDEN")) {
+        if (phase != null && phase.equals("TWILIGHT")) {
             return _bgGolden;
         }
         if (phase != null && phase.equals("NIGHT")) {
@@ -227,7 +231,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (phase != null && phase.equals("NIGHT")) {
             return _moonNight;
         }
-        if (phase != null && phase.equals("GOLDEN")) {
+        if (phase != null && phase.equals("TWILIGHT")) {
             return _sunGolden;
         }
         return _sunDay;
@@ -261,8 +265,42 @@ class GoldenTimeView extends WatchUi.WatchFace {
             goldenTs = null;
         }
 
+        var morningBlueStartTs = snap[:morningBlueStartTs] as Number or Null;
+        var morningBlueEndTs = snap[:morningBlueEndTs] as Number or Null;
+        var eveningBlueStartTs = snap[:eveningBlueStartTs] as Number or Null;
+        var eveningBlueEndTs = snap[:eveningBlueEndTs] as Number or Null;
+        var morningGoldenStartTs = snap[:morningGoldenStartTs] as Number or Null;
+        var morningGoldenEndTs = snap[:morningGoldenEndTs] as Number or Null;
+        var eveningGoldenStartTs = snap[:eveningGoldenStartTs] as Number or Null;
+        var eveningGoldenEndTs = snap[:eveningGoldenEndTs] as Number or Null;
+
+        var isBlueNow =
+            (morningBlueStartTs != null && morningBlueEndTs != null
+                && nowTs >= (morningBlueStartTs as Number) && nowTs < (morningBlueEndTs as Number))
+            || (eveningBlueStartTs != null && eveningBlueEndTs != null
+                && nowTs >= (eveningBlueStartTs as Number) && nowTs < (eveningBlueEndTs as Number));
+
+        var isGoldenNow =
+            (morningGoldenStartTs != null && morningGoldenEndTs != null
+                && nowTs >= (morningGoldenStartTs as Number) && nowTs < (morningGoldenEndTs as Number))
+            || (eveningGoldenStartTs != null && eveningGoldenEndTs != null
+                && nowTs >= (eveningGoldenStartTs as Number) && nowTs < (eveningGoldenEndTs as Number));
+        isBlueNow = isBlueNow && (blueTs != null);
+        isGoldenNow = isGoldenNow && (goldenTs != null);
+
+        // Shared boundary uses left-closed/right-open, but keep a hard rule for abnormal data.
+        if (isBlueNow && isGoldenNow) {
+            isBlueNow = false;
+        }
+
         var blueText = _formatStartTime(blueTs);
         var goldenText = _formatStartTime(goldenTs);
+        if (isBlueNow) {
+            blueText = "NOW";
+        }
+        if (isGoldenNow) {
+            goldenText = "NOW";
+        }
 
         var blockCenterY = 180;
         var yLabel = blockCenterY - 12;
@@ -364,7 +402,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
         if ((nowTs >= (morningBlueStartTs as Number) && nowTs < (morningGoldenEndTs as Number))
             || (nowTs >= (eveningGoldenStartTs as Number) && nowTs < (eveningBlueEndTs as Number))) {
-            return "GOLDEN";
+            return "TWILIGHT";
         }
         if (nowTs >= (morningGoldenEndTs as Number) && nowTs < (eveningGoldenStartTs as Number)) {
             return "DAY";
@@ -376,8 +414,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (mode != null && mode.equals("--")) {
             return "NIGHT";
         }
-        if (mode != null && mode.equals("GOLDEN")) {
-            return "GOLDEN";
+        if (mode != null && (mode.equals("GOLDEN") || mode.equals("BLUE"))) {
+            return "TWILIGHT";
         }
         if (mode != null && mode.equals("NIGHT")) {
             return "NIGHT";

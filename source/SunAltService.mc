@@ -134,8 +134,12 @@ class SunAltService {
                 :nextGoldenStartTs => null,
                 :nextBlueStartTs => null,
                 :morningBlueStartTs => null,
+                :morningBlueEndTs => null,
+                :morningGoldenStartTs => null,
                 :morningGoldenEndTs => null,
                 :eveningGoldenStartTs => null,
+                :eveningGoldenEndTs => null,
+                :eveningBlueStartTs => null,
                 :eveningBlueEndTs => null,
                 :todayHasGoldenStart => false,
                 :todayHasBlueStart => false,
@@ -154,8 +158,12 @@ class SunAltService {
         var nextGolden = _findNextGoldenOrBlue(_cachedEvents, nowTs, "GOLDEN");
         var nextBlue = _findNextGoldenOrBlue(_cachedEvents, nowTs, "BLUE");
         var morningBlueStartTs = _findFirstEventTsByType(_cachedEvents, "MORNING_BLUE_START");
+        var morningBlueEndTs = _findFirstEventTsByType(_cachedEvents, "MORNING_BLUE_END");
+        var morningGoldenStartTs = _findFirstEventTsByType(_cachedEvents, "MORNING_GOLDEN_START");
         var morningGoldenEndTs = _findFirstEventTsByType(_cachedEvents, "MORNING_GOLDEN_END");
         var eveningGoldenStartTs = _findFirstEventTsByType(_cachedEvents, "EVENING_GOLDEN_START");
+        var eveningGoldenEndTs = _findFirstEventTsByType(_cachedEvents, "EVENING_GOLDEN_END");
+        var eveningBlueStartTs = _findFirstEventTsByType(_cachedEvents, "EVENING_BLUE_START");
         var eveningBlueEndTs = _findFirstEventTsByType(_cachedEvents, "EVENING_BLUE_END");
         
         if (DEBUG_LOG) {
@@ -169,8 +177,12 @@ class SunAltService {
             :nextGoldenStartTs => nextGolden,
             :nextBlueStartTs => nextBlue,
             :morningBlueStartTs => morningBlueStartTs,
+            :morningBlueEndTs => morningBlueEndTs,
+            :morningGoldenStartTs => morningGoldenStartTs,
             :morningGoldenEndTs => morningGoldenEndTs,
             :eveningGoldenStartTs => eveningGoldenStartTs,
+            :eveningGoldenEndTs => eveningGoldenEndTs,
+            :eveningBlueStartTs => eveningBlueStartTs,
             :eveningBlueEndTs => eveningBlueEndTs,
             :todayHasGoldenStart => _hasGoldenOrBlue(_cachedEvents, "GOLDEN"),
             :todayHasBlueStart => _hasGoldenOrBlue(_cachedEvents, "BLUE"),

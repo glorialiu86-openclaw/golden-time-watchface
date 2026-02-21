@@ -123,8 +123,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (!((snap[:todayHasGoldenStart] as Boolean) || false)) {
             goldenTs = null;
         }
-        var blueText = Lang.format("b=$1$", [_formatRemaining(nowTs, blueTs)]);
-        var goldenText = Lang.format("g=$1$", [_formatRemaining(nowTs, goldenTs)]);
+        var blueText = Lang.format("b=$1$", [_formatStartTime(blueTs)]);
+        var goldenText = Lang.format("g=$1$", [_formatStartTime(goldenTs)]);
         if (DEBUG_ENABLED) {
             System.println(Lang.format("[BG_PICK] phase=$1$", [_phase]));
             System.println(Lang.format(
@@ -180,7 +180,11 @@ class GoldenTimeView extends WatchUi.WatchFace {
         var info = Time.Gregorian.info(nowMoment, Time.FORMAT_SHORT);
         var dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
         var monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-        var dowIdx = (info[:day_of_week] as Number);
+        var dowRaw = info[:day_of_week] as Number;
+        var dowIdx = ((dowRaw - 1) % 7).toNumber();
+        if (dowIdx < 0) {
+            dowIdx += 7;
+        }
         var monthIdx = (info[:month] as Number) - 1;
         var dateText = Lang.format("$1$ | $2$ $3$", [
             dayNames[dowIdx],
@@ -245,8 +249,8 @@ class GoldenTimeView extends WatchUi.WatchFace {
             goldenTs = null;
         }
 
-        var blueText = _formatRemaining(nowTs, blueTs);
-        var goldenText = _formatRemaining(nowTs, goldenTs);
+        var blueText = _formatStartTime(blueTs);
+        var goldenText = _formatStartTime(goldenTs);
 
         var blockCenterY = 180;
         var yLabel = blockCenterY - 12;
@@ -286,20 +290,19 @@ class GoldenTimeView extends WatchUi.WatchFace {
         }
     }
 
-    function _formatRemaining(nowTs as Number, targetTs as Number or Null) as String {
+    function _formatStartTime(targetTs as Number or Null) as String {
         if (targetTs == null) {
             return "--:--";
         }
 
-        var remainingSec = (targetTs as Number) - nowTs;
-        if (remainingSec <= 0) {
-            return "00:00";
-        }
-
-        var totalMin = Math.floor(remainingSec / 60.0);
-        var hh = Math.floor(totalMin / 60.0);
-        var mm = totalMin - (hh * 60);
-        return Lang.format("$1$:$2$", [(hh.toNumber()).format("%02d"), (mm.toNumber()).format("%02d")]);
+        var info = Time.Gregorian.info(new Time.Moment(targetTs as Number), Time.FORMAT_SHORT);
+        return Lang.format(
+            "$1$:$2$",
+            [
+                (info[:hour] as Number).format("%02d"),
+                (info[:min] as Number).format("%02d")
+            ]
+        );
     }
 
     function _getSafeInsets(dc as Dc) as Lang.Dictionary {

@@ -4,7 +4,7 @@ import Toybox.System;
 import Toybox.Time;
 
 class SunAltService {
-    const DEBUG_LOG = true;
+    const DEBUG_LOG = false;
     const LOC_CHANGE_THRESHOLD_DEG = 0.01;
     const COARSE_STEP_SEC = 900;  // 15 分钟步长，更精确
     const BISECT_TOLERANCE_SEC = 1;
@@ -622,6 +622,9 @@ class SunAltService {
     }
 
     function _modeFromAltitude(altDeg) {
+        if (altDeg == null || _isNaN(altDeg)) {
+            return "--";
+        }
         if (_abs(altDeg) < ALT_ZERO_EPS_DEG) {
             return "GOLDEN";
         }

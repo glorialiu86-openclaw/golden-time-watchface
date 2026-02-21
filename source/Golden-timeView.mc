@@ -15,12 +15,24 @@ class GoldenTimeView extends WatchUi.WatchFace {
     var _locationService as LocationService;
     var _sunAltService as SunAltService;
     var _phase as String;
+    var _bgGolden as WatchUi.BitmapResource;
+    var _bgNight as WatchUi.BitmapResource;
+    var _bgDay as WatchUi.BitmapResource;
+    var _moonNight as WatchUi.BitmapResource;
+    var _sunGolden as WatchUi.BitmapResource;
+    var _sunDay as WatchUi.BitmapResource;
 
     function initialize() {
         WatchFace.initialize();
         _locationService = new LocationService();
         _sunAltService = new SunAltService();
         _phase = "DAY";
+        _bgGolden = WatchUi.loadResource(Rez.Drawables.bg_golden) as WatchUi.BitmapResource;
+        _bgNight = WatchUi.loadResource(Rez.Drawables.bg_night) as WatchUi.BitmapResource;
+        _bgDay = WatchUi.loadResource(Rez.Drawables.bg_day) as WatchUi.BitmapResource;
+        _moonNight = WatchUi.loadResource(Rez.Drawables.moon_night) as WatchUi.BitmapResource;
+        _sunGolden = WatchUi.loadResource(Rez.Drawables.sun_golden) as WatchUi.BitmapResource;
+        _sunDay = WatchUi.loadResource(Rez.Drawables.sun_day) as WatchUi.BitmapResource;
     }
 
     function onLayout(dc as Dc) as Void {
@@ -142,12 +154,12 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
     function _getBackgroundBitmap(phase as String) as WatchUi.BitmapResource {
         if (phase != null && phase.equals("GOLDEN")) {
-            return WatchUi.loadResource(Rez.Drawables.bg_golden) as WatchUi.BitmapResource;
+            return _bgGolden;
         }
         if (phase != null && phase.equals("NIGHT")) {
-            return WatchUi.loadResource(Rez.Drawables.bg_night) as WatchUi.BitmapResource;
+            return _bgNight;
         }
-        return WatchUi.loadResource(Rez.Drawables.bg_day) as WatchUi.BitmapResource;
+        return _bgDay;
     }
 
     function _drawTime(dc as Dc, w as Number, h as Number) as Void {
@@ -213,12 +225,12 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
     function _getCelestialBitmap(phase as String) as WatchUi.BitmapResource {
         if (phase != null && phase.equals("NIGHT")) {
-            return WatchUi.loadResource(Rez.Drawables.moon_night) as WatchUi.BitmapResource;
+            return _moonNight;
         }
         if (phase != null && phase.equals("GOLDEN")) {
-            return WatchUi.loadResource(Rez.Drawables.sun_golden) as WatchUi.BitmapResource;
+            return _sunGolden;
         }
-        return WatchUi.loadResource(Rez.Drawables.sun_day) as WatchUi.BitmapResource;
+        return _sunDay;
     }
 
     function _drawCelestial(dc as Dc) as Void {
@@ -361,6 +373,9 @@ class GoldenTimeView extends WatchUi.WatchFace {
     }
 
     function _phaseFromMode(mode as String or Null) as String {
+        if (mode != null && mode.equals("--")) {
+            return "NIGHT";
+        }
         if (mode != null && mode.equals("GOLDEN")) {
             return "GOLDEN";
         }

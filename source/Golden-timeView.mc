@@ -6,8 +6,9 @@ import Toybox.Time;
 import Toybox.WatchUi;
 
 class GoldenTimeView extends WatchUi.WatchFace {
-    const DEBUG_ENABLED = true;
-    const FIX_STALE_MAX_AGE_SEC = 86400;
+    const DEBUG_ENABLED = false;
+    const SOFT_STALE_MAX_AGE_SEC = 259200;
+    const HARD_STALE_MAX_AGE_SEC = 604800;
     const POSITION_LOST_Y_OFFSET = 24;
     const COLOR_WHITE = 0xFFFFFF;
     const COLOR_BLACK = 0x000000;
@@ -48,12 +49,13 @@ class GoldenTimeView extends WatchUi.WatchFace {
 
         _locationService.requestFixIfNeeded(nowTs);
         var fix = _locationService.getLastFix();
-        var positionLost = _isPositionLost(nowTs);
+        var hardStale = _isHardStale(nowTs);
+        var softStale = (!hardStale) && _isSoftStale(nowTs);
 
-        _sunAltService.updateIfNeeded(nowTs, fix);
+        _sunAltService.updateIfNeeded(nowTs, hardStale ? null : fix);
         var snap = _sunAltService.getSnapshot(nowTs);
         var phase = _getPhase(nowTs, snap);
-        if (positionLost) {
+        if (hardStale) {
             phase = "DAY";
         }
         _phase = phase;
@@ -133,7 +135,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         _drawBackground(dc);
         _drawTime(dc, w, h);
         _drawDate(dc, nowMoment, w, h);
-        _drawDualCountdown(dc, snap, nowTs, w, h, positionLost);
+        _drawDualCountdown(dc, snap, nowTs, w, h, hardStale, softStale);
         _drawCelestial(dc);
 
         var hasFix = snap[:hasFix] as Boolean;
@@ -248,7 +250,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.drawBitmap(0, 0, bmp);
     }
 
-    function _drawDualCountdown(dc as Dc, snap as Lang.Dictionary, nowTs as Number, w as Number, h as Number, positionLost as Boolean) as Void {
+    function _drawDualCountdown(dc as Dc, snap as Lang.Dictionary, nowTs as Number, w as Number, h as Number, hardStale as Boolean, softStale as Boolean) as Void {
         var hasFix = snap[:hasFix] as Boolean;
         var pad = 6;
         var fontLabel = Graphics.FONT_XTINY;
@@ -307,7 +309,7 @@ class GoldenTimeView extends WatchUi.WatchFace {
         if (isGoldenNow) {
             goldenText = "NOW";
         }
-        if (positionLost) {
+        if (hardStale) {
             blueText = "--:--";
             goldenText = "--:--";
         }
@@ -338,9 +340,12 @@ class GoldenTimeView extends WatchUi.WatchFace {
         dc.drawText(goldX, yLabel, fontLabel, goldLabel, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         dc.drawText(goldValueX, yValue, fontValue, goldenText, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
-        if (positionLost) {
+        if (hardStale) {
             dc.setColor(COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(w / 2, yValue + POSITION_LOST_Y_OFFSET, Graphics.FONT_XTINY, "POSITION LOST", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            dc.drawText(w / 2, yValue + POSITION_LOST_Y_OFFSET, Graphics.FONT_XTINY, "Enable GPS Once", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        } else if (softStale) {
+            dc.setColor(COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(w / 2, yValue + POSITION_LOST_Y_OFFSET, Graphics.FONT_XTINY, "Update GPS", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         }
 
         // L2 验证：显示版本号
@@ -355,23 +360,37 @@ class GoldenTimeView extends WatchUi.WatchFace {
         }
     }
 
-    function _isPositionLost(nowTs as Number) as Boolean {
+    function _isHardStale(nowTs as Number) as Boolean {
         var fix = _locationService.getLastFix();
         var fixTs = null;
         var ageSec = null;
-        var lost = true;
+        var hardStale = true;
 
         if (fix != null && fix[:ts] != null) {
             fixTs = fix[:ts] as Number;
             ageSec = nowTs - (fixTs as Number);
-            lost = (ageSec as Number) > FIX_STALE_MAX_AGE_SEC;
+            hardStale = (ageSec as Number) > HARD_STALE_MAX_AGE_SEC;
         }
 
         if (DEBUG_ENABLED) {
-            System.println(Lang.format("[POS_LOST] nowTs=$1$ lost=$2$ fixTs=$3$ ageSec=$4$", [nowTs, lost, fixTs, ageSec]));
+            System.println(Lang.format("[POS_HARD_STALE] nowTs=$1$ hardStale=$2$ fixTs=$3$ ageSec=$4$", [nowTs, hardStale, fixTs, ageSec]));
         }
 
-        return lost;
+        return hardStale;
+    }
+
+    function _isSoftStale(nowTs as Number) as Boolean {
+        var fix = _locationService.getLastFix();
+        if (fix == null || fix[:ts] == null) {
+            return false;
+        }
+
+        var ageSec = nowTs - (fix[:ts] as Number);
+        var softStale = (ageSec > SOFT_STALE_MAX_AGE_SEC) && (ageSec <= HARD_STALE_MAX_AGE_SEC);
+        if (DEBUG_ENABLED) {
+            System.println(Lang.format("[POS_SOFT_STALE] nowTs=$1$ softStale=$2$ ageSec=$3$", [nowTs, softStale, ageSec]));
+        }
+        return softStale;
     }
 
     function _formatStartTime(targetTs as Number or Null) as String {
